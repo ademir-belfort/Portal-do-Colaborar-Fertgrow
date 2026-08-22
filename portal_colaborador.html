@@ -148,7 +148,8 @@
   function round2(n){ return Math.round((Number(n)||0)*100)/100; }
   const WEEKDAY_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   const ATTENDANCE_STATUS_LABELS = { presente:"Presente", falta:"Falta", folga:"Folga", ferias:"Férias" };
-  const REQUEST_TYPE_LABEL = { falta:"Falta", folga:"Folga", ferias:"Férias" };
+  const REQUEST_TYPE_LABEL = { falta:"Falta", folga:"Folga", ferias:"Férias", solicitacao_geral:"Solicitação" };
+  const NOTIFICATION_ICON = { turno:"🔄", ferias:"🏖️", desempenho:"⚠️", dss:"🦺", solicitacao_geral:"📝" };
   const REQUEST_STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", rejeitado:"Rejeitado" };
   const CHECKLIST_STATUS_OPTIONS = ["✅","❌","⚠️","🚧","🚨"];
 
@@ -228,6 +229,9 @@
     checklistHistory: [],
     checklistReport: "",
     allEmployeesPublic: [], // [{id, name, cargo}] via RPC list_public_employees() — só pra busca de colegas
+    notifications: [],
+    dssToday: null,
+    dssExpanded: false,
     tab: "escala",
     calMonth: todayISO().slice(0,7),
   };
@@ -342,6 +346,51 @@
     pushDismissed = true;
     render();
   }
+  // ---------------- sininho de notificações (inbox — turno, férias, desempenho, DSS, solicitação geral) ----------------
+  function unreadNotificationsCount(){ return state.notifications.filter(n=>!n.read_at).length; }
+  function bellButtonHTML(){
+    const count = unreadNotificationsCount();
+    return `<button type="button" class="btn ghost small" id="bellBtn" style="width:auto;padding:8px 12px;white-space:nowrap">🔔${count>0?`<span class="nav-badge" style="position:static;display:inline-flex;margin-left:4px;vertical-align:middle">${count}</span>`:""}</button>`;
+  }
+  async function markNotificationRead(id){
+    const n = state.notifications.find(x=>x.id===id);
+    if(!n || n.read_at) return;
+    n.read_at = new Date().toISOString();
+    render();
+    try{ await supabase.from("notifications").update({ read_at: n.read_at }).eq("id", id); }
+    catch(err){ console.error("Falha ao marcar notificação como lida", err); }
+  }
+  function openNotificationsModal(){
+    function renderList(){
+      $("#modalRoot").innerHTML = `
+        <div class="modal-backdrop" id="backdrop">
+          <div class="modal">
+            <div class="modal-head"><h3>Notificações</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+            <div style="max-height:60vh;overflow-y:auto">
+              ${state.notifications.length ? state.notifications.map(n => `
+                <div class="req-row" data-notif="${n.id}" style="${!n.read_at?'font-weight:600':'opacity:.75'};cursor:pointer">
+                  <div class="d">${NOTIFICATION_ICON[n.type]||"🔔"} ${esc(n.title)}</div>
+                  ${n.body ? `<div class="sub">${esc(n.body)}</div>` : ""}
+                  <div class="sub" style="margin-top:2px">${new Date(n.created_at).toLocaleString("pt-BR")}</div>
+                </div>`).join("") : `<p style="color:var(--muted);font-size:12.5px;padding:10px 0">Nenhuma notificação ainda.</p>`}
+            </div>
+            <div class="modal-actions">
+              <button class="btn ghost" id="cancelModal" type="button">Fechar</button>
+            </div>
+          </div>
+        </div>
+      `;
+      const close = () => { $("#modalRoot").innerHTML = ""; render(); };
+      $("#closeModal").addEventListener("click", close);
+      $("#cancelModal").addEventListener("click", close);
+      $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
+      document.querySelectorAll("[data-notif]").forEach(el => el.addEventListener("click", async () => {
+        await markNotificationRead(el.dataset.notif);
+        renderList();
+      }));
+    }
+    renderList();
+  }
   function appShellHTML(){
     const e = state.employee;
     const unseenEscala = unseenRequestUpdatesCount(false);
@@ -355,6 +404,7 @@
             ${pendingSyncCount()>0 ? `<span id="pendingSyncBadge" class="nav-badge" style="position:static;display:inline-block;margin-top:4px" title="Aguardando conexão pra sincronizar">🔄 ${pendingSyncCount()}</span>` : ""}
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+            ${bellButtonHTML()}
             ${installButtonHTML()}
             ${pushButtonHTML()}
           </div>
@@ -380,6 +430,14 @@
     for(let d=1; d<=daysInMonth; d++) cells.push(`${month}-${String(d).padStart(2,"0")}`);
     const monthLabel = new Date(y,m-1,1).toLocaleDateString("pt-BR",{month:"long", year:"numeric"});
     return `
+      ${state.dssToday ? `
+      <div class="card" id="dssTodayCard" style="margin-bottom:14px;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700;font-size:13px">🦺 DSS de hoje: ${esc(state.dssToday.title)}</div>
+          <span style="font-size:11px;color:var(--muted)">${state.dssExpanded?"▲":"▼"}</span>
+        </div>
+        ${state.dssExpanded ? `<div style="font-size:12.5px;color:var(--muted);margin-top:8px;white-space:pre-wrap">${esc(state.dssToday.description)}</div>` : ""}
+      </div>` : ""}
       <h2 class="section">Sua escala</h2>
       <div class="card">
         <div class="cal-head">
@@ -408,16 +466,20 @@
         <p style="font-size:11px;color:var(--muted);margin:10px 0 0;text-align:center">Toque num dia pra justificar falta ou pedir folga</p>
       </div>
       ${!state.shift ? `<p style="color:var(--muted);font-size:12.5px;margin-top:12px">Você ainda não tem um turno padrão definido — fale com o gestor.</p>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px">
+        <h2 class="section" style="margin:0">Minhas solicitações</h2>
+        <button class="btn ghost small" id="newGeneralReqBtn" type="button">+ Nova solicitação geral</button>
+      </div>
       ${(() => { const naoFerias = state.myRequests.filter(r=>r.type!=="ferias"); return naoFerias.length ? `
-      <h2 class="section" style="margin-top:20px">Minhas solicitações</h2>
-      <div class="card" style="padding:4px 16px">
+      <div class="card" style="padding:4px 16px;margin-top:10px">
         ${naoFerias.slice(0,20).map(r => `
           <div class="req-row">
-            <div class="d">${REQUEST_TYPE_LABEL[r.type]} — ${brDate(r.date_start)}</div>
+            <div class="d">${r.type==="solicitacao_geral" ? esc(r.title||"Solicitação") : `${REQUEST_TYPE_LABEL[r.type]} — ${brDate(r.date_start)}`}</div>
             ${r.reason ? `<div class="sub">${esc(r.reason)}</div>` : ""}
             <span class="badge ${r.status}" style="margin-top:6px;display:inline-block">${REQUEST_STATUS_LABEL[r.status]}</span>
+            ${r.admin_response ? `<div class="sub" style="margin-top:4px">Resposta do gestor: ${esc(r.admin_response)}</div>` : ""}
           </div>`).join("")}
-      </div>` : ""; })()}
+      </div>` : `<p style="color:var(--muted);font-size:12px;margin-top:10px">Nenhuma solicitação ainda.</p>`; })()}
     `;
   }
 
@@ -809,6 +871,48 @@
     renderModal();
   }
 
+  // ---------------- solicitação geral (título+descrição livre, sem data) ----------------
+  function openGeneralRequestModal(){
+    $("#modalRoot").innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal">
+          <div class="modal-head"><h3>Nova solicitação geral</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+          <div class="field"><label>Título</label><input class="input" id="gr_title" placeholder="Ex: Troca de EPI, dúvida sobre benefício..." /></div>
+          <div class="field" style="margin-top:10px"><label>Descrição</label><textarea class="input" id="gr_desc" style="min-height:100px" placeholder="Descreva sua solicitação..."></textarea></div>
+          <div class="modal-actions">
+            <button class="btn ghost" id="cancelModal" type="button">Cancelar</button>
+            <button class="btn" id="submitGeneralReq" type="button">Enviar solicitação</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = () => { $("#modalRoot").innerHTML = ""; };
+    $("#closeModal").addEventListener("click", close);
+    $("#cancelModal").addEventListener("click", close);
+    $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
+    $("#submitGeneralReq").addEventListener("click", async () => {
+      const title = $("#gr_title").value.trim();
+      const reason = $("#gr_desc").value.trim();
+      if(!title){ alert("Informe um título pra sua solicitação."); return; }
+      const today = todayISO();
+      const payload = {
+        id: uid(), employee_id: state.employee.id, type: "solicitacao_geral", title, reason,
+        date_start: today, date_end: today, status: "pendente", created_at: new Date().toISOString(),
+      };
+      close();
+      state.myRequests = [payload, ...state.myRequests];
+      render();
+      try{
+        const { error } = await supabase.from("time_off_requests").insert(payload);
+        if(error) throw error;
+      }catch(err){
+        enqueuePendingSync("timeoff", payload);
+        alert("Sem conexão no momento — sua solicitação foi guardada e será enviada sozinha assim que a internet voltar.");
+        render();
+      }
+    });
+  }
+
   // ---------------- férias (aba própria, fora do modal de solicitação) ----------------
   function openFeriasRequestModal(){
     let selectedDate = todayISO();
@@ -933,7 +1037,7 @@
 
   // ---------------- data loading ----------------
   async function loadEmployeeData(){
-    const [{data: shifts}, {data: holidays}, {data: attendance}, {data: myRequests}, {data: checklistCategories}, {data: checklistAreas}, {data: checklistEquipment}, {data: allEmployeesPublic}, {data: checklistHistory}, {data: checklistTodayRows}] = await Promise.all([
+    const [{data: shifts}, {data: holidays}, {data: attendance}, {data: myRequests}, {data: checklistCategories}, {data: checklistAreas}, {data: checklistEquipment}, {data: allEmployeesPublic}, {data: checklistHistory}, {data: checklistTodayRows}, {data: notifications}, {data: dssToday}] = await Promise.all([
       supabase.from("shifts").select("*"),
       supabase.from("holidays").select("*"),
       supabase.from("attendance").select("*").eq("employee_id", state.employee.id),
@@ -944,6 +1048,8 @@
       supabase.rpc("list_public_employees"),
       supabase.from("daily_checklists").select("*").eq("employee_id", state.employee.id).lt("date", todayISO()).order("date",{ascending:false}).limit(14),
       supabase.from("daily_checklists").select("*").eq("employee_id", state.employee.id).eq("date", todayISO()),
+      supabase.from("notifications").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
+      supabase.from("dss_topics").select("*").eq("date", todayISO()).maybeSingle(),
     ]);
     state.shifts = shifts || [];
     state.holidays = holidays || [];
@@ -955,6 +1061,8 @@
     state.allEmployeesPublic = (allEmployeesPublic || []).filter(e=>e.id!==state.employee.id);
     state.checklistHistory = checklistHistory || [];
     state.checklistTodayRows = checklistTodayRows || [];
+    state.notifications = notifications || [];
+    state.dssToday = dssToday || null;
     state.shift = state.shifts.find(s=>s.id===state.employee.shift_id) || null;
     if(state.employee.company_id){
       const { data: company } = await supabase.from("companies").select("*").eq("id", state.employee.company_id).maybeSingle();
@@ -1026,6 +1134,8 @@
     });
     const pushBtn = $("#pushAppBtn");
     if(pushBtn) pushBtn.addEventListener("click", enablePushNotifications);
+    const bellBtn = $("#bellBtn");
+    if(bellBtn) bellBtn.addEventListener("click", openNotificationsModal);
 
     document.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", async () => {
       if(el.dataset.tab==="logout"){ await supabase.auth.signOut(); state = {...state, view:"auth", session:null, profile:null, employee:null}; render(); return; }
@@ -1037,6 +1147,10 @@
       $("#calNext").addEventListener("click", () => { state.calMonth = addMonths(state.calMonth,1); render(); });
       document.querySelectorAll("[data-calday]").forEach(el => el.addEventListener("click", () => openRequestModal(el.dataset.calday)));
       localStorage.setItem("lastSeenRequests_"+state.employee.id, new Date().toISOString());
+      const dssCard = $("#dssTodayCard");
+      if(dssCard) dssCard.addEventListener("click", () => { state.dssExpanded = !state.dssExpanded; render(); });
+      const newGeneralReqBtn = $("#newGeneralReqBtn");
+      if(newGeneralReqBtn) newGeneralReqBtn.addEventListener("click", openGeneralRequestModal);
     }
     if(state.tab==="ferias"){
       const newFeriasBtn = $("#newFeriasBtn");
