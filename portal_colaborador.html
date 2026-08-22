@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Fertgrow — Portal do Colaborador</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0B6B33" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Fertgrow" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg:#0a1410; --surface:#101d16; --surface2:#16261d; --border:#213328;
+    --text:#e9f2ea; --muted:#8aa08d; --brand:#0B6B33; --brand-light:#AFD676;
+    --emerald:#34d399; --amber:#fbbf24; --rose:#fb7185; --cyan:#22d3ee; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Inter,sans-serif;font-size:15px;-webkit-tap-highlight-color:transparent;}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;padding-bottom:76px;}
+  header.top{padding:16px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(10,20,16,.95);backdrop-filter:blur(6px);z-index:20;}
+  header.top .brand{font-weight:700;font-size:15px;}
+  header.top .who{font-size:12px;color:var(--muted);margin-top:2px;}
+  main{flex:1;padding:16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:11px 12px;border-radius:9px;font-size:15px;}
+  .input:focus{outline:none;border-color:var(--brand);}
+  .btn{width:100%;background:var(--brand);color:#fff;border:none;padding:12px 16px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;}
+  .btn:active{background:var(--brand-light);}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);}
+  .btn.small{padding:8px 12px;font-size:13px;width:auto;}
+  .msg{font-size:13px;padding:10px 12px;border-radius:9px;margin-bottom:14px;}
+  .msg.err{background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.35);color:#fca5b1;}
+  .msg.ok{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);color:#6ee7b7;}
+  .tabs2{display:flex;gap:6px;background:var(--surface2);padding:4px;border-radius:10px;margin-bottom:16px;}
+  .tabs2 .t{flex:1;text-align:center;padding:8px;border-radius:7px;font-size:13px;color:var(--muted);cursor:pointer;}
+  .tabs2 .t.active{background:var(--brand);color:#fff;font-weight:600;}
+  nav.bottom{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;max-width:480px;margin:0 auto;z-index:30;}
+  nav.bottom .n{flex:1;text-align:center;padding:10px 4px 12px;color:var(--muted);cursor:pointer;font-size:11px;position:relative;}
+  nav.bottom .n .ic{font-size:19px;display:block;margin-bottom:2px;}
+  nav.bottom .n.active{color:var(--brand-light);}
+  h2.section{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin:0 0 12px;font-weight:700;}
+  .cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .cal-head b{font-size:14px;text-transform:capitalize;}
+  .iconbtn{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;width:32px;height:32px;font-size:16px;cursor:pointer;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+  .cal-grid .dow{text-align:center;font-size:10px;color:var(--muted);font-weight:700;padding-bottom:2px;}
+  .cal-grid .day{border-radius:8px;padding:7px 2px;text-align:center;font-size:12px;min-height:38px;}
+  .legend2{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:10.5px;color:var(--muted);}
+  .legend2 span{display:inline-flex;align-items:center;gap:5px;}
+  .dot{width:8px;height:8px;border-radius:2px;display:inline-block;}
+  .att-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid rgba(33,51,40,.6);}
+  .att-row:last-child{border-bottom:none;}
+  .att-row .d{font-size:13px;font-weight:600;}
+  .att-row .sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .badge{padding:3px 9px;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap;}
+  .badge.presente{background:rgba(11,107,51,.15);color:var(--brand-light);border:1px solid rgba(11,107,51,.35);}
+  .badge.falta{background:rgba(251,113,133,.15);color:var(--rose);border:1px solid rgba(251,113,133,.35);}
+  .badge.folga{background:#1c2b21;color:var(--muted);}
+  .badge.ferias{background:rgba(34,211,238,.15);color:var(--cyan);border:1px solid rgba(34,211,238,.35);}
+  .badge.pendente{background:rgba(251,191,36,.15);color:var(--amber);border:1px solid rgba(251,191,36,.35);}
+  .badge.aprovado{background:rgba(52,211,153,.15);color:var(--emerald);border:1px solid rgba(52,211,153,.35);}
+  .badge.rejeitado{background:rgba(251,113,133,.15);color:var(--rose);border:1px solid rgba(251,113,133,.35);}
+  .modal-backdrop{position:fixed;inset:0;background:rgba(4,10,7,.7);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;}
+  .modal h3{margin:0;font-size:16px;}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .req-row{padding:10px 0;border-bottom:1px solid rgba(33,51,40,.6);}
+  .req-row:last-child{border-bottom:none;}
+  .req-row .d{font-size:13px;font-weight:600;}
+  .req-row .sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .eq-area-title{font-size:13px;font-weight:700;color:var(--brand-light);margin:16px 0 8px;padding-left:8px;border-left:3px solid var(--brand);}
+  .eq-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;}
+  .eq-card.selected{border-color:var(--brand-light);}
+  .eq-top{display:flex;align-items:center;gap:10px;}
+  .eq-top input[type=checkbox]{width:20px;height:20px;flex-shrink:0;accent-color:var(--brand);}
+  .eq-name{font-weight:600;font-size:13.5px;flex:1;}
+  .eq-status-row{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+  .eq-status-btn{flex:1;min-width:42px;padding:8px 4px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);font-size:16px;cursor:pointer;text-align:center;color:var(--text);}
+  .eq-status-btn.active{border-color:var(--brand-light);background:rgba(11,107,51,.3);}
+  .eq-details{margin-top:10px;display:flex;flex-direction:column;gap:8px;}
+  .eq-details textarea{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 10px;border-radius:8px;font-size:13px;min-height:52px;resize:vertical;font-family:inherit;}
+  .mass-bar{position:sticky;top:64px;z-index:15;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:12px;}
+  .mass-bar .row1{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;margin-bottom:8px;}
+  .mass-bar .row1 input{width:20px;height:20px;accent-color:var(--brand);}
+  .report-output{background:#050a07;color:#d7e6da;padding:12px;border-radius:10px;white-space:pre-wrap;font-family:Consolas,monospace;font-size:11.5px;line-height:1.5;max-height:420px;overflow-y:auto;}
+  .colega-suggestions{margin-top:6px;border:1px solid var(--border);border-radius:9px;overflow:hidden;max-height:200px;overflow-y:auto;}
+  .colega-suggestion{padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid rgba(33,51,40,.6);}
+  .colega-suggestion:last-child{border-bottom:none;}
+  .colega-suggestion:active{background:var(--surface2);}
+  .colega-suggestion .sub{color:var(--muted);font-size:11.5px;margin-left:6px;}
+  .colega-suggestion.muted{color:var(--muted);cursor:default;}
+  .colega-item{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface2);border-radius:8px;}
+  .colega-item .name{font-size:13px;}
+  .colega-item .name .sub{color:var(--muted);font-size:11.5px;margin-left:6px;}
+  .hist-row{padding:10px 0;border-bottom:1px solid rgba(33,51,40,.6);font-size:12.5px;}
+  .hist-row:last-child{border-bottom:none;}
+  .hist-row .d{font-weight:600;font-size:13px;}
+  .hist-row .sub{color:var(--muted);margin-top:2px;}
+  .nav-badge{position:absolute;top:2px;right:calc(50% - 22px);background:var(--rose);color:#fff;border-radius:999px;min-width:16px;height:16px;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;}
+  .empty{text-align:center;color:var(--muted);padding:40px 16px;font-size:13px;}
+  .spinner{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
+  a.link{color:var(--brand-light);cursor:pointer;text-decoration:underline;font-size:13px;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ===================================================================
+  // CONFIGURAÇÃO — cole aqui a URL e a chave "anon public" do seu
+  // projeto Supabase (Project Settings > API). Sem isso o portal não
+  // consegue se conectar ao banco compartilhado.
+  // ===================================================================
+  const SUPABASE_URL = "https://eusvotyusfwxolczqzlc.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_2Uee6RYvUtvR5m4Vy6yyDQ_fgEeGEsX";
+
+  const configured = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+  const supabase = configured && window.supabase
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
+
+  // ---------------- helpers (mesma lógica do painel do gestor) ----------------
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const todayISO = () => new Date().toISOString().slice(0,10);
+  function toISO(d){ return d.toISOString().slice(0,10); }
+  function brDate(iso){ if(!iso) return "—"; const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`; }
+  function addDays(iso,n){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return toISO(d); }
+  function addMonths(monthStr, delta){
+    const [y,m] = monthStr.split("-").map(Number);
+    const d = new Date(y, (m-1)+delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+  function round2(n){ return Math.round((Number(n)||0)*100)/100; }
+  const WEEKDAY_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  const ATTENDANCE_STATUS_LABELS = { presente:"Presente", falta:"Falta", folga:"Folga", ferias:"Férias" };
+  const REQUEST_TYPE_LABEL = { falta:"Falta", folga:"Folga", ferias:"Férias" };
+  const REQUEST_STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", rejeitado:"Rejeitado" };
+  const CHECKLIST_STATUS_OPTIONS = ["✅","❌","⚠️","🚧","🚨"];
+
+  function attendanceStatus(entry){
+    if(!entry) return null;
+    if(entry.status) return entry.status;
+    return entry.present ? "presente" : "falta";
+  }
+  function findHoliday(holidays, dateISO){
+    return (holidays||[]).find(h => h.date===dateISO || (h.recurring && h.date.slice(5)===dateISO.slice(5)));
+  }
+  function shiftWorksOnDate(shift, dateISO){
+    if(!shift) return false;
+    if(shift.mode==="semanal"){
+      const dow = new Date(dateISO+"T00:00:00").getDay();
+      return (shift.weekdays||[]).includes(dow);
+    }
+    const cycleLen = Math.max(1, Number(shift.cycle_work||0) + Number(shift.cycle_rest||0));
+    const anchor = shift.cycle_anchor || todayISO();
+    let offset = Math.round((new Date(dateISO)-new Date(anchor))/86400000) % cycleLen;
+    if(offset < 0) offset += cycleLen;
+    return offset < Number(shift.cycle_work||0);
+  }
+  function scheduledDayInfo(employee, shift, holidays, attendanceList, dateISO){
+    const holiday = findHoliday(holidays, dateISO);
+    const scheduled = !!shift && shiftWorksOnDate(shift, dateISO) && !holiday;
+    const attendance = (attendanceList||[]).find(a=>a.date===dateISO);
+    return { shift, holiday, scheduled, attendance };
+  }
+  function attendanceDayStyle(employee, shift, holidays, attendanceList, dateISO){
+    const info = scheduledDayInfo(employee, shift, holidays, attendanceList, dateISO);
+    const status = info.attendance ? attendanceStatus(info.attendance) : null;
+    if(info.holiday) return { bg:"rgba(167,139,250,.22)", color:"#c4b5fd", label:info.holiday.name };
+    if(status==="presente") return { bg:"rgba(52,211,153,.22)", color:"var(--emerald)", label:"Trabalhou" };
+    if(status==="falta") return { bg:"rgba(251,113,133,.22)", color:"var(--rose)", label:"Faltou" };
+    if(status==="ferias") return { bg:"rgba(34,211,238,.22)", color:"var(--cyan)", label:"Férias" };
+    if(status==="folga") return { bg:"transparent", color:"var(--muted)", label:"Folga" };
+    if(info.scheduled && dateISO < todayISO()) return { bg:"rgba(251,191,36,.22)", color:"var(--amber)", label:"Sem apontamento" };
+    if(info.scheduled) return { bg:"rgba(11,107,51,.15)", color:"var(--brand-light)", label:"Previsto" };
+    return { bg:"transparent", color:"var(--muted)", label:"Folga" };
+  }
+  function attendanceEntryHoursBreakdown(shift, holidays, entry){
+    if(!entry || attendanceStatus(entry)!=="presente") return { normalHours:0, overtimeHours:0, kind:null };
+    const hours = round2(Number(entry.hours||0));
+    if(hours<=0) return { normalHours:0, overtimeHours:0, kind:null };
+    const holiday = findHoliday(holidays, entry.date);
+    const scheduled = !!shift && shiftWorksOnDate(shift, entry.date) && !holiday;
+    const expected = entry.expected_hours ?? (shift ? shift.hours_per_day : hours);
+    if(!scheduled) return { normalHours:0, overtimeHours:hours, kind:"restday" };
+    if(hours > expected) return { normalHours:expected, overtimeHours: round2(hours-expected), kind:"workday" };
+    return { normalHours:hours, overtimeHours:0, kind:null };
+  }
+
+  // ---------------- estado ----------------
+  let state = {
+    view: configured ? "loading" : "unconfigured",
+    authMode: "login", // "login" | "signup"
+    authError: "",
+    authInfo: "",
+    session: null,
+    profile: null,
+    employee: null,
+    company: null,
+    shift: null,
+    shifts: [],
+    holidays: [],
+    attendance: [],
+    myRequests: [],
+    checklistToday: null,
+    checklistTodayRows: [], // um por categoria já enviada hoje (ver checklist_categories)
+    checklistCategories: [],
+    checklistCategory: null, // categoria escolhida nesta sessão — reseta a cada login/refresh
+    checklistAreas: [],
+    checklistEquipment: [],
+    checklistDraft: [],
+    checklistColegas: [], // [{id, name, cargo}] colegas de turno adicionados ao checklist de hoje
+    checklistHistory: [],
+    checklistReport: "",
+    allEmployeesPublic: [], // [{id, name, cargo}] via RPC list_public_employees() — só pra busca de colegas
+    tab: "escala",
+    calMonth: todayISO().slice(0,7),
+  };
+  let checklistSelected = new Set(); // ids de equipamento marcados no checklist pra aplicar status em massa
+  let checklistSaveTimer = null;
+  let colegaSearch = ""; // texto digitado na busca de colegas de turno (não persistido)
+
+  function render(){ $("#app").innerHTML = viewHTML(); wireView(); }
+
+  function viewHTML(){
+    if(state.view==="unconfigured") return unconfiguredHTML();
+    if(state.view==="loading") return `<div class="spinner">Carregando…</div>`;
+    if(state.view==="auth") return authHTML();
+    if(state.view==="unlinked") return unlinkedHTML();
+    return appShellHTML();
+  }
+
+  function unconfiguredHTML(){
+    return `
+      <header class="top"><div class="brand">Fertgrow — Portal do Colaborador</div></header>
+      <main>
+        <div class="card">
+          <p style="margin-top:0">Este portal ainda não foi conectado ao banco compartilhado.</p>
+          <p style="color:var(--muted);font-size:13px">Peça pro gestor preencher <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code> no topo deste arquivo (ver <code>supabase_schema.sql</code> pra criar o banco primeiro).</p>
+        </div>
+      </main>`;
+  }
+
+  function authHTML(){
+    const isSignup = state.authMode==="signup";
+    return `
+      <header class="top"><div class="brand">Fertgrow</div><div class="who">Portal do Colaborador</div></header>
+      <main>
+        <div class="tabs2">
+          <div class="t ${!isSignup?'active':''}" data-authtab="login">Entrar</div>
+          <div class="t ${isSignup?'active':''}" data-authtab="signup">Criar conta</div>
+        </div>
+        ${state.authError ? `<div class="msg err">${esc(state.authError)}</div>` : ""}
+        ${state.authInfo ? `<div class="msg ok">${esc(state.authInfo)}</div>` : ""}
+        <div class="card">
+          ${isSignup ? `<p style="margin-top:0;font-size:12.5px;color:var(--muted)">Use o mesmo e-mail que o gestor cadastrou na sua ficha de funcionário — é assim que o sistema sabe quem é você.</p>` : ""}
+          <div class="field"><label>E-mail</label><input type="email" class="input" id="auth_email" autocomplete="email" /></div>
+          <div class="field"><label>Senha</label><input type="password" class="input" id="auth_password" autocomplete="${isSignup?'new-password':'current-password'}" /></div>
+          <button class="btn" id="auth_submit">${isSignup?'Criar conta':'Entrar'}</button>
+        </div>
+      </main>`;
+  }
+
+  function unlinkedHTML(){
+    return `
+      <header class="top"><div class="brand">Fertgrow</div><div class="who">Portal do Colaborador</div></header>
+      <main>
+        <div class="card">
+          <p style="margin-top:0">Sua conta foi criada, mas não encontrei nenhum funcionário cadastrado com esse e-mail.</p>
+          <p style="color:var(--muted);font-size:13px">Fale com o gestor pra conferir se o e-mail da sua ficha está certo. Depois disso, saia e entre de novo.</p>
+          <button class="btn ghost" id="unlinked_logout" style="margin-top:8px">Sair</button>
+        </div>
+      </main>`;
+  }
+
+  // Solicitações decididas (aprovadas/rejeitadas) depois da última vez que o colaborador abriu a aba
+  // Escala — não existe conceito de "visto" no banco, então usamos localStorage só pra esse timestamp.
+  // ferias=true conta só solicitações de férias; ferias=false conta só falta/folga.
+  function unseenRequestUpdatesCount(ferias){
+    const key = ferias ? "lastSeenFerias_" : "lastSeenRequests_";
+    const lastSeen = localStorage.getItem(key+state.employee.id) || "1970-01-01T00:00:00.000Z";
+    return state.myRequests.filter(r => (r.type==="ferias")===ferias && r.status!=="pendente" && r.updated_at && r.updated_at > lastSeen).length;
+  }
+  // ---------------- instalação do app (PWA) ----------------
+  let deferredInstallPrompt = null; // guardado quando o Chrome/Android dispara beforeinstallprompt
+  let installDismissed = false; // esconde o botão nesta sessão depois de instalar ou de mostrar a dica do iOS
+  function isIOSDevice(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream; }
+  function isStandaloneApp(){ return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone===true; }
+  function installButtonHTML(){
+    if(isStandaloneApp() || installDismissed) return "";
+    if(deferredInstallPrompt) return `<button type="button" class="btn small" id="installAppBtn" style="width:auto;padding:8px 12px;white-space:nowrap">📲 Instalar app</button>`;
+    if(isIOSDevice()) return `<button type="button" class="btn ghost small" id="installAppHint" style="width:auto;padding:8px 12px;white-space:nowrap">📲 Instalar</button>`;
+    return "";
+  }
+  function appShellHTML(){
+    const e = state.employee;
+    const unseenEscala = unseenRequestUpdatesCount(false);
+    const unseenFerias = unseenRequestUpdatesCount(true);
+    return `
+      <header class="top">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div>
+            <div class="brand">${esc(e.name)}</div>
+            <div class="who">${esc(e.cargo||"")}${state.company?` · ${esc(state.company.name)}`:""}${state.shift?` · ${esc(state.shift.name)}`:""}</div>
+          </div>
+          ${installButtonHTML()}
+        </div>
+      </header>
+      <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():checklistHTML()}</main>
+      <nav class="bottom">
+        <div class="n ${state.tab==='escala'?'active':''}" data-tab="escala"><span class="ic">📅</span>Escala${unseenEscala>0?`<span class="nav-badge">${unseenEscala}</span>`:""}</div>
+        <div class="n ${state.tab==='ponto'?'active':''}" data-tab="ponto"><span class="ic">🕐</span>Ponto</div>
+        <div class="n ${state.tab==='ferias'?'active':''}" data-tab="ferias"><span class="ic">🏖️</span>Férias${unseenFerias>0?`<span class="nav-badge">${unseenFerias}</span>`:""}</div>
+        <div class="n ${state.tab==='checklist'?'active':''}" data-tab="checklist"><span class="ic">✅</span>Checklist</div>
+        <div class="n" data-tab="logout"><span class="ic">🚪</span>Sair</div>
+      </nav>`;
+  }
+
+  function escalaHTML(){
+    const month = state.calMonth;
+    const [y,m] = month.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const firstDow = new Date(y, m-1, 1).getDay();
+    const cells = [];
+    for(let i=0;i<firstDow;i++) cells.push(null);
+    for(let d=1; d<=daysInMonth; d++) cells.push(`${month}-${String(d).padStart(2,"0")}`);
+    const monthLabel = new Date(y,m-1,1).toLocaleDateString("pt-BR",{month:"long", year:"numeric"});
+    return `
+      <h2 class="section">Sua escala</h2>
+      <div class="card">
+        <div class="cal-head">
+          <button class="iconbtn" id="calPrev">‹</button>
+          <b>${monthLabel}</b>
+          <button class="iconbtn" id="calNext">›</button>
+        </div>
+        <div class="cal-grid">
+          ${WEEKDAY_LABELS.map(w=>`<div class="dow">${w}</div>`).join("")}
+          ${cells.map(dateISO => {
+            if(!dateISO) return `<div></div>`;
+            const style = attendanceDayStyle(state.employee, state.shift, state.holidays, state.attendance, dateISO);
+            const day = Number(dateISO.slice(8,10));
+            const todayMark = dateISO===todayISO() ? "box-shadow:0 0 0 2px var(--brand-light) inset;" : "";
+            return `<div class="day" data-calday="${dateISO}" title="${esc(style.label)} · toque pra justificar falta ou pedir folga" style="background:${style.bg};color:${style.color};${todayMark}cursor:pointer">${day}</div>`;
+          }).join("")}
+        </div>
+        <div class="legend2">
+          <span><span class="dot" style="background:rgba(52,211,153,.8)"></span>Trabalhou</span>
+          <span><span class="dot" style="background:rgba(251,113,133,.8)"></span>Faltou</span>
+          <span><span class="dot" style="background:rgba(34,211,238,.8)"></span>Férias</span>
+          <span><span class="dot" style="background:rgba(251,191,36,.8)"></span>Sem apontamento</span>
+          <span><span class="dot" style="background:rgba(167,139,250,.8)"></span>Feriado</span>
+          <span><span class="dot" style="background:transparent;border:1px solid var(--border)"></span>Folga</span>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:10px 0 0;text-align:center">Toque num dia pra justificar falta ou pedir folga</p>
+      </div>
+      ${!state.shift ? `<p style="color:var(--muted);font-size:12.5px;margin-top:12px">Você ainda não tem um turno padrão definido — fale com o gestor.</p>` : ""}
+      ${(() => { const naoFerias = state.myRequests.filter(r=>r.type!=="ferias"); return naoFerias.length ? `
+      <h2 class="section" style="margin-top:20px">Minhas solicitações</h2>
+      <div class="card" style="padding:4px 16px">
+        ${naoFerias.slice(0,20).map(r => `
+          <div class="req-row">
+            <div class="d">${REQUEST_TYPE_LABEL[r.type]} — ${brDate(r.date_start)}</div>
+            ${r.reason ? `<div class="sub">${esc(r.reason)}</div>` : ""}
+            <span class="badge ${r.status}" style="margin-top:6px;display:inline-block">${REQUEST_STATUS_LABEL[r.status]}</span>
+          </div>`).join("")}
+      </div>` : ""; })()}
+    `;
+  }
+
+  function pontoHTML(){
+    const sorted = [...state.attendance].sort((a,b)=> a.date < b.date ? 1 : -1).slice(0, 60);
+    return `
+      <h2 class="section">Meus apontamentos</h2>
+      <div class="card" style="padding:4px 16px">
+        ${sorted.length ? sorted.map(a => {
+          const status = attendanceStatus(a);
+          const ob = attendanceEntryHoursBreakdown(state.shift, state.holidays, a);
+          return `
+          <div class="att-row">
+            <div>
+              <div class="d">${brDate(a.date)}</div>
+              <div class="sub">${esc(a.turno||"")}${a.hours?` · ${a.hours}h`:""}${ob.overtimeHours>0?` · ⚡${ob.overtimeHours}h extra`:""}</div>
+            </div>
+            <span class="badge ${status}">${ATTENDANCE_STATUS_LABELS[status]||status}</span>
+          </div>`;
+        }).join("") : `<div class="empty">Nenhum apontamento registrado ainda.</div>`}
+      </div>
+    `;
+  }
+
+  // Escolha livre de categoria (não filtrada por cargo, que é texto livre nesse sistema — filtrar
+  // por cargo seria frágil). Marca quais categorias já têm um envio hoje, pra dar contexto.
+  function checklistCategoryPickerHTML(){
+    const categories = [...state.checklistCategories].sort((a,b)=>a.order-b.order);
+    const sentIds = new Set(state.checklistTodayRows.map(r=>r.category_id));
+    return `
+      <h2 class="section">Checklist de turno — ${brDate(todayISO())}</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-4px 0 12px">Qual checklist você vai preencher agora?</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${categories.map(c=>`
+          <button type="button" class="card" data-selectcategory="${c.id}" style="width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600">${esc(c.name)}</span>
+            ${sentIds.has(c.id) ? `<span class="badge aprovado">Já enviado hoje</span>` : ""}
+          </button>`).join("")}
+      </div>
+    `;
+  }
+  function checklistHTML(){
+    if(!state.checklistCategories.length){
+      return `<h2 class="section">Checklist de turno</h2><div class="card"><div class="empty">Nenhuma categoria de checklist cadastrada ainda. Fale com o gestor.</div></div>`;
+    }
+    if(!state.checklistCategory){
+      return checklistCategoryPickerHTML();
+    }
+    const category = state.checklistCategories.find(c=>c.id===state.checklistCategory);
+    const areas = state.checklistAreas.filter(a=>a.category_id===state.checklistCategory).sort((a,b)=>a.order-b.order);
+    if(!areas.length){
+      return `<h2 class="section">Checklist de turno — ${esc(category?category.name:"")}</h2><div class="card"><div class="empty">Nenhuma área/equipamento cadastrado nessa categoria ainda. Fale com o gestor.</div></div><button type="button" class="btn ghost" id="backToCategoriesBtn" style="margin-top:12px">‹ Trocar de categoria</button>`;
+    }
+    const draftByEquip = new Map(state.checklistDraft.map(d=>[d.equipment_id, d]));
+    const visibleIds = state.checklistDraft.map(d=>d.equipment_id);
+    const allSelected = visibleIds.length>0 && visibleIds.every(id=>checklistSelected.has(id));
+    const addedIds = new Set(state.checklistColegas.map(c=>c.id));
+    const q = colegaSearch.trim().toLowerCase();
+    const matches = q ? state.allEmployeesPublic.filter(e=>!addedIds.has(e.id) && e.name.toLowerCase().includes(q)).slice(0,8) : [];
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <h2 class="section" style="margin:0">${esc(category?category.name:"")} — ${brDate(todayISO())}</h2>
+        <button type="button" class="btn ghost small" id="backToCategoriesBtn">‹ Trocar categoria</button>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <h2 class="section" style="margin-bottom:8px">Colegas de turno</h2>
+        <input class="input" id="colegaSearch" placeholder="Buscar colega por nome..." value="${esc(colegaSearch)}" autocomplete="off" />
+        ${q ? `<div class="colega-suggestions">
+          ${matches.length ? matches.map(e=>`<div class="colega-suggestion" data-addcolega="${e.id}">${esc(e.name)}<span class="sub">${esc(e.cargo||"")}</span></div>`).join("") : `<div class="colega-suggestion muted">Nenhum funcionário encontrado</div>`}
+        </div>` : ""}
+        ${state.checklistColegas.length ? `
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">
+          ${state.checklistColegas.map((c,i)=>`
+            <div class="colega-item">
+              <span class="name">${esc(c.name)}<span class="sub">${esc(c.cargo||"")}</span></span>
+              <button type="button" class="btn ghost small" data-removecolega="${i}">Remover</button>
+            </div>`).join("")}
+        </div>` : `<p style="font-size:11.5px;color:var(--muted);margin:10px 0 0">Nenhum colega adicionado ainda.</p>`}
+      </div>
+      <div class="mass-bar">
+        <label class="row1"><input type="checkbox" id="checkSelectAll" ${allSelected?'checked':''} /> Selecionar todos</label>
+        <div class="eq-status-row">
+          ${CHECKLIST_STATUS_OPTIONS.map(s=>`<button type="button" class="eq-status-btn" data-massstatus="${s}">${s}</button>`).join("")}
+        </div>
+      </div>
+      ${areas.map(a => {
+        const equip = state.checklistEquipment.filter(e=>e.area_id===a.id).sort((x,y)=>x.order-y.order);
+        if(!equip.length) return "";
+        return `
+        <div class="eq-area-title">${esc(a.name)}</div>
+        ${equip.map(eq => {
+          const d = draftByEquip.get(eq.id) || {status:"",obs:"",pendencia:"",acao:""};
+          const showDetails = d.status && d.status!=="✅";
+          return `
+          <div class="eq-card ${checklistSelected.has(eq.id)?'selected':''}">
+            <div class="eq-top">
+              <input type="checkbox" data-eqselect="${eq.id}" ${checklistSelected.has(eq.id)?'checked':''} />
+              <span class="eq-name">${esc(eq.name)}</span>
+            </div>
+            <div class="eq-status-row">
+              ${CHECKLIST_STATUS_OPTIONS.map(s=>`<button type="button" class="eq-status-btn ${d.status===s?'active':''}" data-eqstatus="${eq.id}" data-status="${s}">${s}</button>`).join("")}
+            </div>
+            ${showDetails ? `
+            <div class="eq-details">
+              <textarea placeholder="Observação" data-eqfield="${eq.id}" data-field="obs">${esc(d.obs)}</textarea>
+              <textarea placeholder="Pendência" data-eqfield="${eq.id}" data-field="pendencia">${esc(d.pendencia)}</textarea>
+              <textarea placeholder="Ação realizada" data-eqfield="${eq.id}" data-field="acao">${esc(d.acao)}</textarea>
+            </div>` : ""}
+          </div>`;
+        }).join("")}`;
+      }).join("")}
+      <button class="btn" id="genReportBtn" style="margin-top:14px">Gerar relatório</button>
+      ${state.checklistReport ? `
+      <div class="card" style="margin-top:12px">
+        <div class="report-output">${esc(state.checklistReport)}</div>
+        <button class="btn ghost" id="copyReportBtn" style="margin-top:10px">Copiar relatório</button>
+        <div id="copyMsg" class="msg ok" style="display:none;margin-top:10px">Relatório copiado!</div>
+      </div>` : ""}
+      <h2 class="section" style="margin-top:20px">Checklists anteriores</h2>
+      <div class="card" style="padding:4px 16px">
+        ${state.checklistHistory.length ? state.checklistHistory.map(h => {
+          const counts = {};
+          (h.items||[]).forEach(it=>{ if(it.status) counts[it.status] = (counts[it.status]||0)+1; });
+          const summary = Object.entries(counts).map(([s,n])=>`${s} ${n}`).join("  ") || "sem itens preenchidos";
+          return `<div class="hist-row"><div class="d">${brDate(h.date)}</div><div class="sub">${summary}</div></div>`;
+        }).join("") : `<div class="empty">Nenhum checklist anterior ainda.</div>`}
+      </div>
+    `;
+  }
+  // Monta o rascunho em memória a partir da árvore + do envio de hoje (se já existir). Protege contra
+  // um registro no formato antigo (pré-reforma): se o primeiro item não tem equipment_id, trata como
+  // "sem envio ainda" em vez de tentar casar pelos ids errados.
+  function buildChecklistDraft(){
+    const raw = state.checklistToday && Array.isArray(state.checklistToday.items) ? state.checklistToday.items : [];
+    const validShape = !raw.length || raw[0].equipment_id !== undefined;
+    const byEquipId = new Map(validShape ? raw.map(it=>[it.equipment_id, it]) : []);
+    const areaIds = new Set(state.checklistAreas.filter(a=>a.category_id===state.checklistCategory).map(a=>a.id));
+    state.checklistDraft = state.checklistEquipment.filter(eq=>areaIds.has(eq.area_id)).map(eq => {
+      const saved = byEquipId.get(eq.id);
+      return { equipment_id: eq.id, area_id: eq.area_id, status: saved?.status||"", obs: saved?.obs||"", pendencia: saved?.pendencia||"", acao: saved?.acao||"" };
+    });
+  }
+  function addColega(id){
+    if(state.checklistColegas.some(c=>c.id===id)) return;
+    const e = state.allEmployeesPublic.find(x=>x.id===id);
+    if(!e) return;
+    state.checklistColegas.push({ id: e.id, name: e.name, cargo: e.cargo||"" });
+    colegaSearch = "";
+    saveChecklistDraft();
+    render();
+  }
+  function removeColega(index){
+    state.checklistColegas.splice(index, 1);
+    saveChecklistDraft();
+    render();
+  }
+  function setChecklistStatus(equipId, status){
+    const d = state.checklistDraft.find(x=>x.equipment_id===equipId);
+    if(!d) return;
+    d.status = status;
+    saveChecklistDraft();
+    render();
+  }
+  function applyStatusToSelected(status){
+    state.checklistDraft.forEach(d => { if(checklistSelected.has(d.equipment_id)) d.status = status; });
+    saveChecklistDraft();
+    render();
+  }
+  function scheduleChecklistSave(){
+    clearTimeout(checklistSaveTimer);
+    checklistSaveTimer = setTimeout(saveChecklistDraft, 600);
+  }
+  function flushChecklistSave(){
+    if(checklistSaveTimer){ clearTimeout(checklistSaveTimer); checklistSaveTimer = null; saveChecklistDraft(); }
+  }
+  async function saveChecklistDraft(){
+    if(!state.checklistCategory) return;
+    const category = state.checklistCategories.find(c=>c.id===state.checklistCategory);
+    const items = state.checklistDraft.map(d => {
+      const eq = state.checklistEquipment.find(e=>e.id===d.equipment_id);
+      const area = eq ? state.checklistAreas.find(a=>a.id===eq.area_id) : null;
+      return {
+        equipment_id: d.equipment_id, area_id: d.area_id,
+        equipment_name: eq?eq.name:"", area_name: area?area.name:"",
+        category_id: state.checklistCategory, category_name: category?category.name:"",
+        status: d.status, obs: d.obs, pendencia: d.pendencia, acao: d.acao,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    const row = { employee_id: state.employee.id, date: todayISO(), category_id: state.checklistCategory, items, colegas: state.checklistColegas };
+    const { data, error } = await supabase.from("daily_checklists").upsert(row, {onConflict:"employee_id,date,category_id"}).select().maybeSingle();
+    if(error){ console.error("Falha ao salvar checklist", error); return; }
+    state.checklistToday = data || {...row};
+    state.checklistTodayRows = [...state.checklistTodayRows.filter(r=>r.category_id!==state.checklistCategory), state.checklistToday];
+  }
+  function buildChecklistReportText(){
+    const category = state.checklistCategories.find(c=>c.id===state.checklistCategory);
+    const lines = [];
+    lines.push(`Checklist de turno — ${category?category.name+" — ":""}${brDate(todayISO())}`);
+    lines.push(`Funcionário: ${state.employee.name}`);
+    if(state.checklistColegas.length){
+      const porCargo = {};
+      state.checklistColegas.forEach(c => { (porCargo[c.cargo||"Outro"] = porCargo[c.cargo||"Outro"]||[]).push(c.name); });
+      lines.push("");
+      Object.keys(porCargo).forEach(cargo => lines.push(`${cargo}: ${porCargo[cargo].join(" / ")}`));
+    }
+    lines.push("");
+    lines.push("LEGENDA:");
+    lines.push("✅ Conforme   ❌ Fora de funcionamento   ⚠️ Com pendência   🚧 Bloqueado   🚨 Atenção");
+    const areas = state.checklistAreas.filter(a=>a.category_id===state.checklistCategory).sort((a,b)=>a.order-b.order);
+    const draftByEquip = new Map(state.checklistDraft.map(d=>[d.equipment_id,d]));
+    const pendencias = [];
+    areas.forEach(a => {
+      const equip = state.checklistEquipment.filter(e=>e.area_id===a.id).sort((x,y)=>x.order-y.order);
+      const withContent = equip.filter(eq => { const d=draftByEquip.get(eq.id); return d && (d.status||d.obs||d.pendencia||d.acao); });
+      if(!withContent.length) return;
+      lines.push(""); lines.push(a.name);
+      withContent.forEach(eq => {
+        const d = draftByEquip.get(eq.id);
+        let line = `- ${eq.name}`;
+        if(d.status) line += ` ${d.status}`;
+        if(d.obs) line += ` ${d.obs}`;
+        lines.push(line);
+        if(d.pendencia){ lines.push(`  Pendência: ${d.pendencia}`); pendencias.push(`${a.name} - ${eq.name}: ${d.pendencia}`); }
+        if(d.acao) lines.push(`  Ação realizada: ${d.acao}`);
+      });
+    });
+    if(pendencias.length){
+      lines.push(""); lines.push("PENDÊNCIAS:");
+      pendencias.forEach((p,i)=>lines.push(`🚨 Pendência ${String(i+1).padStart(2,"0")}: ${p}`));
+    }
+    return lines.join("\n").trim();
+  }
+  function copyChecklistReport(){
+    const texto = state.checklistReport;
+    if(!texto) return;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(texto).then(showCopyMsg).catch(() => copyFallback(texto));
+    } else {
+      copyFallback(texto);
+    }
+  }
+  function copyFallback(texto){
+    const area = document.createElement("textarea");
+    area.value = texto;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed"; area.style.top = "0"; area.style.left = "0"; area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.focus(); area.select();
+    try{ document.execCommand("copy"); showCopyMsg(); }
+    catch(e){ alert("Não consegui copiar automaticamente. Segure o dedo no texto do relatório e copie manualmente."); }
+    document.body.removeChild(area);
+  }
+  function showCopyMsg(){
+    const msg = $("#copyMsg");
+    if(!msg) return;
+    msg.style.display = "block";
+    setTimeout(() => { msg.style.display = "none"; }, 2200);
+  }
+
+  // ---------------- modal de solicitação (falta/folga/férias) ----------------
+  function openRequestModal(dateISO){
+    let reqType = "falta";
+
+    function bodyHTML(){
+      return `
+        <div class="field"><label>Data</label><div style="padding:11px 12px;background:var(--surface2);border-radius:9px;font-size:14px">${brDate(dateISO)}</div></div>
+        <div class="field"><label>Motivo</label><textarea class="input" id="req_reason" style="min-height:80px" placeholder="${reqType==='falta'?'Ex: atraso no transporte, falta por consulta médica, etc.':'Ex: compromisso pessoal'}"></textarea></div>
+      `;
+    }
+    function renderModal(){
+      $("#modalRoot").innerHTML = `
+        <div class="modal-backdrop" id="backdrop">
+          <div class="modal">
+            <div class="modal-head"><h3>Nova solicitação</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+            <div class="tabs2">
+              <div class="t ${reqType==='falta'?'active':''}" data-reqtype="falta">Falta</div>
+              <div class="t ${reqType==='folga'?'active':''}" data-reqtype="folga">Folga</div>
+            </div>
+            ${bodyHTML()}
+            <div class="modal-actions">
+              <button class="btn ghost" id="cancelModal" type="button">Cancelar</button>
+              <button class="btn" id="submitReq" type="button">Enviar pedido</button>
+            </div>
+          </div>
+        </div>
+      `;
+      wireModal();
+    }
+    function wireModal(){
+      const close = () => { $("#modalRoot").innerHTML = ""; };
+      $("#closeModal").addEventListener("click", close);
+      $("#cancelModal").addEventListener("click", close);
+      $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
+      document.querySelectorAll("[data-reqtype]").forEach(el => el.addEventListener("click", () => {
+        reqType = el.dataset.reqtype;
+        renderModal();
+      }));
+      $("#submitReq").addEventListener("click", async () => {
+        const reasonEl = $("#req_reason");
+        const reason = reasonEl ? reasonEl.value.trim() : "";
+        const btn = $("#submitReq"); btn.disabled = true; btn.textContent = "Enviando…";
+        const { error } = await supabase.from("time_off_requests").insert({
+          employee_id: state.employee.id, type: reqType, date_start: dateISO, date_end: dateISO, reason,
+        });
+        if(error){ alert("Não consegui enviar a solicitação: "+error.message); btn.disabled=false; btn.textContent="Enviar pedido"; return; }
+        close();
+        const { data: myRequests } = await supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false});
+        state.myRequests = myRequests || [];
+        render();
+      });
+    }
+    renderModal();
+  }
+
+  // ---------------- férias (aba própria, fora do modal de solicitação) ----------------
+  function openFeriasRequestModal(){
+    let selectedDate = todayISO();
+    let untilDate = todayISO();
+    let rangeAnchor = null;
+    let pickerMonth = todayISO().slice(0,7);
+
+    function pickerHTML(){
+      const [y,m] = pickerMonth.split("-").map(Number);
+      const daysInMonth = new Date(y,m,0).getDate();
+      const firstDow = new Date(y,m-1,1).getDay();
+      const cells = [];
+      for(let i=0;i<firstDow;i++) cells.push(null);
+      for(let d=1; d<=daysInMonth; d++) cells.push(`${pickerMonth}-${String(d).padStart(2,"0")}`);
+      const monthLabel = new Date(y,m-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+      return `
+        <div class="cal-head"><button class="iconbtn" id="reqCalPrev" type="button">‹</button><b>${monthLabel}</b><button class="iconbtn" id="reqCalNext" type="button">›</button></div>
+        <div class="cal-grid">
+          ${WEEKDAY_LABELS.map(w=>`<div class="dow">${w}</div>`).join("")}
+          ${cells.map(d => {
+            if(!d) return `<div></div>`;
+            const worked = state.attendance.some(a=>a.date===d && attendanceStatus(a)==="presente");
+            if(worked){
+              return `<div title="Já registrado como trabalhado — não dá pra pedir férias nesse dia" style="opacity:.35;cursor:not-allowed">${Number(d.slice(8,10))}</div>`;
+            }
+            const inRange = d>=selectedDate && d<=untilDate;
+            const isStart = d===selectedDate;
+            const holiday = findHoliday(state.holidays, d);
+            const ring = isStart ? "box-shadow:0 0 0 2px var(--brand-light) inset;" : (inRange?"box-shadow:0 0 0 1px var(--brand-light) inset;":"");
+            const bg = inRange ? "rgba(11,107,51,.3)" : (holiday?"rgba(167,139,250,.18)":"transparent");
+            return `<div class="day" data-reqday="${d}" title="${holiday?esc(holiday.name):''}" style="background:${bg};${ring}cursor:pointer">${Number(d.slice(8,10))}</div>`;
+          }).join("")}
+        </div>
+        <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0">De ${brDate(selectedDate)} até ${brDate(untilDate)}</p>
+        <div class="field" style="margin-top:10px"><label>Motivo (opcional)</label><textarea class="input" id="req_reason" style="min-height:60px"></textarea></div>
+      `;
+    }
+    function renderModal(){
+      $("#modalRoot").innerHTML = `
+        <div class="modal-backdrop" id="backdrop">
+          <div class="modal">
+            <div class="modal-head"><h3>Solicitar férias</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+            ${pickerHTML()}
+            <div class="modal-actions">
+              <button class="btn ghost" id="cancelModal" type="button">Cancelar</button>
+              <button class="btn" id="submitReq" type="button">Enviar pedido</button>
+            </div>
+          </div>
+        </div>
+      `;
+      wireModal();
+    }
+    function wireModal(){
+      const close = () => { $("#modalRoot").innerHTML = ""; };
+      $("#closeModal").addEventListener("click", close);
+      $("#cancelModal").addEventListener("click", close);
+      $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
+      $("#reqCalPrev").addEventListener("click", () => { pickerMonth = addMonths(pickerMonth,-1); renderModal(); });
+      $("#reqCalNext").addEventListener("click", () => { pickerMonth = addMonths(pickerMonth,1); renderModal(); });
+      document.querySelectorAll("[data-reqday]").forEach(el => el.addEventListener("click", () => {
+        const d = el.dataset.reqday;
+        if(!rangeAnchor){ selectedDate = d; untilDate = d; rangeAnchor = d; }
+        else{
+          if(d>=rangeAnchor){ selectedDate = rangeAnchor; untilDate = d; } else { selectedDate = d; untilDate = rangeAnchor; }
+          rangeAnchor = null;
+        }
+        renderModal();
+      }));
+      $("#submitReq").addEventListener("click", async () => {
+        const reason = $("#req_reason").value.trim();
+        const days = Math.round((new Date(untilDate)-new Date(selectedDate))/86400000)+1;
+        if(days>120){ alert("Esse intervalo tem mais de 120 dias — fale direto com o gestor pra períodos tão longos."); return; }
+        const btn = $("#submitReq"); btn.disabled = true; btn.textContent = "Enviando…";
+        const { error } = await supabase.from("time_off_requests").insert({
+          employee_id: state.employee.id, type:"ferias", date_start: selectedDate, date_end: untilDate, reason,
+        });
+        if(error){ alert("Não consegui enviar a solicitação: "+error.message); btn.disabled=false; btn.textContent="Enviar pedido"; return; }
+        close();
+        const { data: myRequests } = await supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false});
+        state.myRequests = myRequests || [];
+        render();
+      });
+    }
+    renderModal();
+  }
+  function feriasHTML(){
+    const ferias = state.myRequests.filter(r=>r.type==="ferias");
+    const ativa = ferias.find(r => (r.status==="pendente"||r.status==="aprovado") && r.date_end>=todayISO());
+    return `
+      <h2 class="section">Minhas férias</h2>
+      ${ativa ? `
+      <div class="card">
+        <div class="req-row" style="border-bottom:none;padding-top:0">
+          <div class="d">${brDate(ativa.date_start)} a ${brDate(ativa.date_end)}</div>
+          ${ativa.reason ? `<div class="sub">${esc(ativa.reason)}</div>` : ""}
+          <span class="badge ${ativa.status}" style="margin-top:6px;display:inline-block">${REQUEST_STATUS_LABEL[ativa.status]}</span>
+        </div>
+        <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0">Você já tem um período ${ativa.status==="pendente"?"pendente":"aprovado"} — não dá pra pedir outro enquanto esse não passar.</p>
+      </div>` : `
+      <div class="card">
+        <p style="margin-top:0;font-size:13px;color:var(--muted)">Você não tem nenhuma férias pendente ou aprovada no momento.</p>
+        <button class="btn" id="newFeriasBtn">+ Solicitar férias</button>
+      </div>`}
+      ${ferias.length ? `
+      <h2 class="section" style="margin-top:20px">Histórico</h2>
+      <div class="card" style="padding:4px 16px">
+        ${ferias.map(r => `
+          <div class="req-row">
+            <div class="d">${brDate(r.date_start)} a ${brDate(r.date_end)}</div>
+            ${r.reason ? `<div class="sub">${esc(r.reason)}</div>` : ""}
+            <span class="badge ${r.status}" style="margin-top:6px;display:inline-block">${REQUEST_STATUS_LABEL[r.status]}</span>
+          </div>`).join("")}
+      </div>` : ""}
+    `;
+  }
+
+  // ---------------- data loading ----------------
+  async function loadEmployeeData(){
+    const [{data: shifts}, {data: holidays}, {data: attendance}, {data: myRequests}, {data: checklistCategories}, {data: checklistAreas}, {data: checklistEquipment}, {data: allEmployeesPublic}, {data: checklistHistory}, {data: checklistTodayRows}] = await Promise.all([
+      supabase.from("shifts").select("*"),
+      supabase.from("holidays").select("*"),
+      supabase.from("attendance").select("*").eq("employee_id", state.employee.id),
+      supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
+      supabase.from("checklist_categories").select("*").order("order"),
+      supabase.from("checklist_areas").select("*").order("order"),
+      supabase.from("checklist_equipment").select("*").order("order"),
+      supabase.rpc("list_public_employees"),
+      supabase.from("daily_checklists").select("*").eq("employee_id", state.employee.id).lt("date", todayISO()).order("date",{ascending:false}).limit(14),
+      supabase.from("daily_checklists").select("*").eq("employee_id", state.employee.id).eq("date", todayISO()),
+    ]);
+    state.shifts = shifts || [];
+    state.holidays = holidays || [];
+    state.attendance = attendance || [];
+    state.myRequests = myRequests || [];
+    state.checklistCategories = checklistCategories || [];
+    state.checklistAreas = checklistAreas || [];
+    state.checklistEquipment = checklistEquipment || [];
+    state.allEmployeesPublic = (allEmployeesPublic || []).filter(e=>e.id!==state.employee.id);
+    state.checklistHistory = checklistHistory || [];
+    state.checklistTodayRows = checklistTodayRows || [];
+    state.shift = state.shifts.find(s=>s.id===state.employee.shift_id) || null;
+    if(state.employee.company_id){
+      const { data: company } = await supabase.from("companies").select("*").eq("id", state.employee.company_id).maybeSingle();
+      state.company = company || null;
+    }
+    // checklistToday/checklistDraft/checklistColegas dependem da categoria escolhida — montados em
+    // selectChecklistCategory(), já que nenhuma categoria está selecionada logo após o login.
+  }
+  // Escolhe a categoria de checklist ativa nesta sessão e monta o rascunho a partir do envio de
+  // hoje PRA ESSA categoria, se já existir (cada categoria tem sua própria linha em daily_checklists).
+  function selectChecklistCategory(categoryId){
+    state.checklistCategory = categoryId;
+    const today = state.checklistTodayRows.find(r=>r.category_id===categoryId) || null;
+    state.checklistToday = today;
+    state.checklistColegas = (today && Array.isArray(today.colegas)) ? today.colegas : [];
+    buildChecklistDraft();
+    render();
+  }
+
+  async function bootstrap(){
+    if(!configured){ state.view = "unconfigured"; render(); return; }
+    const { data: { session } } = await supabase.auth.getSession();
+    if(!session){ state.view = "auth"; render(); return; }
+    state.session = session;
+    await afterLogin();
+  }
+
+  async function afterLogin(){
+    state.view = "loading"; render();
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", state.session.user.id).maybeSingle();
+    state.profile = profile;
+    if(!profile || !profile.employee_id){ state.view = "unlinked"; render(); return; }
+    const { data: employee } = await supabase.from("employees").select("*").eq("id", profile.employee_id).maybeSingle();
+    if(!employee){ state.view = "unlinked"; render(); return; }
+    state.employee = employee;
+    await loadEmployeeData();
+    state.view = "app"; state.tab = "escala";
+    render();
+  }
+
+  // ---------------- wiring ----------------
+  function wireView(){
+    if(state.view==="auth"){
+      document.querySelectorAll("[data-authtab]").forEach(el => el.addEventListener("click", () => {
+        state.authMode = el.dataset.authtab; state.authError=""; state.authInfo=""; render();
+      }));
+      $("#auth_submit").addEventListener("click", onAuthSubmit);
+      return;
+    }
+    if(state.view==="unlinked"){
+      $("#unlinked_logout").addEventListener("click", async () => { await supabase.auth.signOut(); state.view="auth"; render(); });
+      return;
+    }
+    if(state.view!=="app") return;
+
+    const installBtn = $("#installAppBtn");
+    if(installBtn) installBtn.addEventListener("click", async () => {
+      if(!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if(choice.outcome==="accepted") installDismissed = true;
+      render();
+    });
+    const installHint = $("#installAppHint");
+    if(installHint) installHint.addEventListener("click", () => {
+      alert('Pra instalar no iPhone: toque no ícone de Compartilhar (o quadrado com a seta pra cima) e escolha "Adicionar à Tela de Início".');
+    });
+
+    document.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", async () => {
+      if(el.dataset.tab==="logout"){ await supabase.auth.signOut(); state = {...state, view:"auth", session:null, profile:null, employee:null}; render(); return; }
+      state.tab = el.dataset.tab; render();
+    }));
+
+    if(state.tab==="escala"){
+      $("#calPrev").addEventListener("click", () => { state.calMonth = addMonths(state.calMonth,-1); render(); });
+      $("#calNext").addEventListener("click", () => { state.calMonth = addMonths(state.calMonth,1); render(); });
+      document.querySelectorAll("[data-calday]").forEach(el => el.addEventListener("click", () => openRequestModal(el.dataset.calday)));
+      localStorage.setItem("lastSeenRequests_"+state.employee.id, new Date().toISOString());
+    }
+    if(state.tab==="ferias"){
+      const newFeriasBtn = $("#newFeriasBtn");
+      if(newFeriasBtn) newFeriasBtn.addEventListener("click", openFeriasRequestModal);
+      localStorage.setItem("lastSeenFerias_"+state.employee.id, new Date().toISOString());
+    }
+    if(state.tab==="checklist"){
+      document.querySelectorAll("[data-selectcategory]").forEach(el => el.addEventListener("click", () => selectChecklistCategory(el.dataset.selectcategory)));
+      const backBtn = $("#backToCategoriesBtn");
+      if(backBtn) backBtn.addEventListener("click", () => { state.checklistCategory = null; render(); });
+      const colegaInput = $("#colegaSearch");
+      if(colegaInput) colegaInput.addEventListener("input", () => {
+        colegaSearch = colegaInput.value;
+        render();
+        const el = $("#colegaSearch");
+        if(el){ el.focus(); const v = el.value; el.setSelectionRange(v.length, v.length); }
+      });
+      document.querySelectorAll("[data-addcolega]").forEach(el => el.addEventListener("click", () => addColega(el.dataset.addcolega)));
+      document.querySelectorAll("[data-removecolega]").forEach(el => el.addEventListener("click", () => removeColega(Number(el.dataset.removecolega))));
+      const selectAll = $("#checkSelectAll");
+      if(selectAll) selectAll.addEventListener("change", () => {
+        const ids = state.checklistDraft.map(d=>d.equipment_id);
+        if(selectAll.checked) ids.forEach(id=>checklistSelected.add(id)); else checklistSelected.clear();
+        render();
+      });
+      document.querySelectorAll("[data-eqselect]").forEach(el => el.addEventListener("change", () => {
+        if(el.checked) checklistSelected.add(el.dataset.eqselect); else checklistSelected.delete(el.dataset.eqselect);
+        render();
+      }));
+      document.querySelectorAll("[data-massstatus]").forEach(el => el.addEventListener("click", () => {
+        if(!checklistSelected.size){ alert("Selecione ao menos um equipamento (marque as caixinhas)."); return; }
+        applyStatusToSelected(el.dataset.massstatus);
+      }));
+      document.querySelectorAll("[data-eqstatus]").forEach(el => el.addEventListener("click", () => setChecklistStatus(el.dataset.eqstatus, el.dataset.status)));
+      document.querySelectorAll("[data-eqfield]").forEach(el => el.addEventListener("input", () => {
+        const d = state.checklistDraft.find(x=>x.equipment_id===el.dataset.eqfield);
+        if(d) d[el.dataset.field] = el.value;
+        scheduleChecklistSave();
+      }));
+      const genBtn = $("#genReportBtn");
+      if(genBtn) genBtn.addEventListener("click", () => { state.checklistReport = buildChecklistReportText(); render(); });
+      const copyBtn = $("#copyReportBtn");
+      if(copyBtn) copyBtn.addEventListener("click", copyChecklistReport);
+    }
+  }
+
+  async function onAuthSubmit(){
+    const email = $("#auth_email").value.trim();
+    const password = $("#auth_password").value;
+    state.authError = ""; state.authInfo = "";
+    if(!email || !password){ state.authError = "Preencha e-mail e senha."; render(); return; }
+    if(state.authMode==="signup"){
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if(error){ state.authError = error.message; render(); return; }
+      if(!data.session){
+        state.authMode = "login";
+        state.authInfo = "Conta criada. Confira seu e-mail pra confirmar (se pedido), depois entre normalmente.";
+        render();
+        return;
+      }
+      state.session = data.session;
+      await afterLogin();
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if(error){ state.authError = "E-mail ou senha inválidos."; render(); return; }
+      state.session = data.session;
+      await afterLogin();
+    }
+  }
+
+  // Celular pode ser minimizado no meio do preenchimento do checklist (chão de fábrica) — força salvar
+  // o que já foi digitado (debounced) assim que a aba perde foco, em vez de arriscar perder o texto.
+  document.addEventListener("visibilitychange", () => { if(document.visibilityState==="hidden") flushChecklistSave(); });
+  window.addEventListener("pagehide", flushChecklistSave);
+
+  // PWA: guarda o prompt de instalação do Android/Chrome pra disparar no clique do botão (não pode
+  // ser mostrado direto no evento) e some com o botão depois de instalado.
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if(state.view==="app") render();
+  });
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null; installDismissed = true;
+    if(state.view==="app") render();
+  });
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(()=>{}); });
+  }
+
+  bootstrap();
+})();
+</script>
+</body>
+</html>
