@@ -133,6 +133,10 @@
   const $ = (sel, root=document) => root.querySelector(sel);
   const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const todayISO = () => new Date().toISOString().slice(0,10);
+  const uid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = Math.random()*16|0, v = c==="x" ? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
   function toISO(d){ return d.toISOString().slice(0,10); }
   function brDate(iso){ if(!iso) return "—"; const [y,m,d]=iso.split("-"); return `${d}/${m}/${y}`; }
   function addDays(iso,n){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return toISO(d); }
@@ -303,6 +307,41 @@
     if(isIOSDevice()) return `<button type="button" class="btn ghost small" id="installAppHint" style="width:auto;padding:8px 12px;white-space:nowrap">📲 Instalar</button>`;
     return "";
   }
+  // ---------------- notificação push (avisa quando o gestor aprova/rejeita um pedido) ----------------
+  // Chave pública VAPID — segura de expor no cliente (é assim que Web Push funciona; só a privada,
+  // usada pela Edge Function pra assinar o envio, precisa ficar em segredo).
+  const VAPID_PUBLIC_KEY = "BIHu1eHh0KBXtE7FSxQDOOynFcAsz-IqH8XFl7p086hZnyU8rx4Er852OQgOgTy4oloikicxuXqY4BXoRRNnqUY";
+  let pushDismissed = false; // esconde o botão nesta sessão depois de ativar ou de decidir não ativar agora
+  function urlBase64ToUint8Array(base64String){
+    const padding = "=".repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+  function pushSupported(){ return "Notification" in window && "serviceWorker" in navigator && "PushManager" in window; }
+  function pushButtonHTML(){
+    if(!pushSupported() || pushDismissed) return "";
+    if(Notification.permission!=="default") return ""; // já concedida ou já negada — nada a pedir
+    return `<button type="button" class="btn ghost small" id="pushAppBtn" style="width:auto;padding:8px 12px;white-space:nowrap">🔔 Ativar notificações</button>`;
+  }
+  async function enablePushNotifications(){
+    try{
+      const permission = await Notification.requestPermission();
+      if(permission==="granted"){
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+        const json = subscription.toJSON();
+        await supabase.from("push_subscriptions").upsert({
+          employee_id: state.employee.id, endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth,
+        }, {onConflict:"endpoint"});
+      }
+    }catch(err){ console.error("Falha ao ativar notificações", err); }
+    pushDismissed = true;
+    render();
+  }
   function appShellHTML(){
     const e = state.employee;
     const unseenEscala = unseenRequestUpdatesCount(false);
@@ -313,8 +352,12 @@
           <div>
             <div class="brand">${esc(e.name)}</div>
             <div class="who">${esc(e.cargo||"")}${state.company?` · ${esc(state.company.name)}`:""}${state.shift?` · ${esc(state.shift.name)}`:""}</div>
+            ${pendingSyncCount()>0 ? `<span id="pendingSyncBadge" class="nav-badge" style="position:static;display:inline-block;margin-top:4px" title="Aguardando conexão pra sincronizar">🔄 ${pendingSyncCount()}</span>` : ""}
           </div>
-          ${installButtonHTML()}
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+            ${installButtonHTML()}
+            ${pushButtonHTML()}
+          </div>
         </div>
       </header>
       <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():checklistHTML()}</main>
@@ -550,6 +593,69 @@
   function flushChecklistSave(){
     if(checklistSaveTimer){ clearTimeout(checklistSaveTimer); checklistSaveTimer = null; saveChecklistDraft(); }
   }
+
+  // ---------------- fila de sincronização offline ----------------
+  // Guarda operações que falharam (queda de sinal, chão de fábrica costuma ter zona morta) pra
+  // reenviar sozinho quando a conexão voltar, em vez de perder o que o colaborador digitou. Cada item
+  // é seguro de reenviar mais de uma vez (checklist já é upsert por chave natural; pedido usa um id
+  // gerado no cliente e só insere se ainda não existir — nunca faz UPDATE, que a policy de RLS de
+  // time_off_requests não libera pro colaborador de propósito, só INSERT/SELECT da própria linha).
+  function pendingSyncKey(){ return "pendingSync_" + (state.employee?.id || "anon"); }
+  function loadPendingSyncQueue(){
+    try{ return JSON.parse(localStorage.getItem(pendingSyncKey()) || "[]"); }catch(e){ return []; }
+  }
+  function savePendingSyncQueue(queue){
+    try{ localStorage.setItem(pendingSyncKey(), JSON.stringify(queue)); }catch(e){}
+  }
+  function enqueuePendingSync(kind, payload){
+    const queue = loadPendingSyncQueue();
+    queue.push({ id: uid(), kind, payload, createdAt: new Date().toISOString() });
+    savePendingSyncQueue(queue);
+    refreshPendingSyncBadge();
+  }
+  function pendingSyncCount(){ return loadPendingSyncQueue().length; }
+  function refreshPendingSyncBadge(){
+    const el = document.getElementById("pendingSyncBadge");
+    const n = pendingSyncCount();
+    if(el) { if(n) el.textContent = `🔄 ${n}`; else el.remove(); }
+    // se o badge ainda não existe na tela (contador vinha de 0) ele aparece no próximo render()
+    // natural — não força um render aqui pra não atrapalhar quem estiver digitando no checklist.
+  }
+  async function syncOneItem(item){
+    if(item.kind==="checklist"){
+      const { error } = await supabase.from("daily_checklists").upsert(item.payload, {onConflict:"employee_id,date,category_id"});
+      return !error;
+    }
+    if(item.kind==="timeoff"){
+      // reenviar não pode virar UPDATE (RLS não libera isso pro colaborador) — confere se já foi
+      // enviado numa tentativa anterior que só não confirmou a tempo, antes de inserir de novo.
+      const { data: existing, error: selErr } = await supabase.from("time_off_requests").select("id").eq("id", item.payload.id).maybeSingle();
+      if(selErr) return false;
+      if(existing) return true;
+      const { error } = await supabase.from("time_off_requests").insert(item.payload);
+      return !error;
+    }
+    return true;
+  }
+  let flushingPendingSync = false;
+  async function flushPendingQueue(){
+    if(flushingPendingSync || !supabase) return;
+    flushingPendingSync = true;
+    try{
+      let queue = loadPendingSyncQueue();
+      while(queue.length){
+        let ok = false;
+        try{ ok = await syncOneItem(queue[0]); }catch(e){ ok = false; }
+        if(!ok) break; // mantém a ordem — para na primeira falha, tenta o resto na próxima rodada
+        queue = queue.slice(1);
+        savePendingSyncQueue(queue);
+      }
+    } finally {
+      flushingPendingSync = false;
+      if(state.view==="app") render();
+    }
+  }
+
   async function saveChecklistDraft(){
     if(!state.checklistCategory) return;
     const category = state.checklistCategories.find(c=>c.id===state.checklistCategory);
@@ -565,10 +671,17 @@
       };
     });
     const row = { employee_id: state.employee.id, date: todayISO(), category_id: state.checklistCategory, items, colegas: state.checklistColegas };
-    const { data, error } = await supabase.from("daily_checklists").upsert(row, {onConflict:"employee_id,date,category_id"}).select().maybeSingle();
-    if(error){ console.error("Falha ao salvar checklist", error); return; }
-    state.checklistToday = data || {...row};
-    state.checklistTodayRows = [...state.checklistTodayRows.filter(r=>r.category_id!==state.checklistCategory), state.checklistToday];
+    state.checklistToday = row; // aplica local na hora — o colaborador não fica esperando a rede pra ver o próprio preenchimento
+    state.checklistTodayRows = [...state.checklistTodayRows.filter(r=>r.category_id!==state.checklistCategory), row];
+    try{
+      const { data, error } = await supabase.from("daily_checklists").upsert(row, {onConflict:"employee_id,date,category_id"}).select().maybeSingle();
+      if(error) throw error;
+      state.checklistToday = data || row;
+      state.checklistTodayRows = [...state.checklistTodayRows.filter(r=>r.category_id!==state.checklistCategory), state.checklistToday];
+    }catch(err){
+      console.error("Falha ao salvar checklist, guardando pra reenviar depois", err);
+      enqueuePendingSync("checklist", row);
+    }
   }
   function buildChecklistReportText(){
     const category = state.checklistCategories.find(c=>c.id===state.checklistCategory);
@@ -676,15 +789,21 @@
       $("#submitReq").addEventListener("click", async () => {
         const reasonEl = $("#req_reason");
         const reason = reasonEl ? reasonEl.value.trim() : "";
-        const btn = $("#submitReq"); btn.disabled = true; btn.textContent = "Enviando…";
-        const { error } = await supabase.from("time_off_requests").insert({
-          employee_id: state.employee.id, type: reqType, date_start: dateISO, date_end: dateISO, reason,
-        });
-        if(error){ alert("Não consegui enviar a solicitação: "+error.message); btn.disabled=false; btn.textContent="Enviar pedido"; return; }
+        const payload = {
+          id: uid(), employee_id: state.employee.id, type: reqType, date_start: dateISO, date_end: dateISO, reason,
+          status: "pendente", created_at: new Date().toISOString(),
+        };
         close();
-        const { data: myRequests } = await supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false});
-        state.myRequests = myRequests || [];
+        state.myRequests = [payload, ...state.myRequests];
         render();
+        try{
+          const { error } = await supabase.from("time_off_requests").insert(payload);
+          if(error) throw error;
+        }catch(err){
+          enqueuePendingSync("timeoff", payload);
+          alert("Sem conexão no momento — seu pedido foi guardado e será enviado sozinho assim que a internet voltar.");
+          render();
+        }
       });
     }
     renderModal();
@@ -762,15 +881,21 @@
         const reason = $("#req_reason").value.trim();
         const days = Math.round((new Date(untilDate)-new Date(selectedDate))/86400000)+1;
         if(days>120){ alert("Esse intervalo tem mais de 120 dias — fale direto com o gestor pra períodos tão longos."); return; }
-        const btn = $("#submitReq"); btn.disabled = true; btn.textContent = "Enviando…";
-        const { error } = await supabase.from("time_off_requests").insert({
-          employee_id: state.employee.id, type:"ferias", date_start: selectedDate, date_end: untilDate, reason,
-        });
-        if(error){ alert("Não consegui enviar a solicitação: "+error.message); btn.disabled=false; btn.textContent="Enviar pedido"; return; }
+        const payload = {
+          id: uid(), employee_id: state.employee.id, type:"ferias", date_start: selectedDate, date_end: untilDate, reason,
+          status: "pendente", created_at: new Date().toISOString(),
+        };
         close();
-        const { data: myRequests } = await supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false});
-        state.myRequests = myRequests || [];
+        state.myRequests = [payload, ...state.myRequests];
         render();
+        try{
+          const { error } = await supabase.from("time_off_requests").insert(payload);
+          if(error) throw error;
+        }catch(err){
+          enqueuePendingSync("timeoff", payload);
+          alert("Sem conexão no momento — seu pedido foi guardado e será enviado sozinho assim que a internet voltar.");
+          render();
+        }
       });
     }
     renderModal();
@@ -868,6 +993,7 @@
     await loadEmployeeData();
     state.view = "app"; state.tab = "escala";
     render();
+    flushPendingQueue(); // pode ter sobrado fila de uma sessão offline anterior
   }
 
   // ---------------- wiring ----------------
@@ -898,6 +1024,8 @@
     if(installHint) installHint.addEventListener("click", () => {
       alert('Pra instalar no iPhone: toque no ícone de Compartilhar (o quadrado com a seta pra cima) e escolha "Adicionar à Tela de Início".');
     });
+    const pushBtn = $("#pushAppBtn");
+    if(pushBtn) pushBtn.addEventListener("click", enablePushNotifications);
 
     document.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", async () => {
       if(el.dataset.tab==="logout"){ await supabase.auth.signOut(); state = {...state, view:"auth", session:null, profile:null, employee:null}; render(); return; }
@@ -998,6 +1126,12 @@
   if("serviceWorker" in navigator){
     window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(()=>{}); });
   }
+
+  // Reenvia a fila de sincronização offline quando a conexão volta — o evento "online" nem sempre
+  // dispara de forma confiável em celular, por isso também tenta de tempos em tempos enquanto a fila
+  // não estiver vazia.
+  window.addEventListener("online", flushPendingQueue);
+  setInterval(() => { if(pendingSyncCount()>0) flushPendingQueue(); }, 30000);
 
   bootstrap();
 })();

@@ -33,3 +33,29 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(event.request))
   );
 });
+
+// Notificação push — avisa o colaborador quando o gestor aprova/rejeita um pedido (disparado pela
+// Edge Function "notify-request-status" logo depois que o painel do gestor confirma a mudança).
+self.addEventListener("push", (event) => {
+  let data = { title: "Fertgrow", body: "Você tem uma atualização." };
+  try { if (event.data) data = { ...data, ...event.data.json() }; } catch (e) {}
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-192.png",
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./portal_colaborador.html");
+    })
+  );
+});
