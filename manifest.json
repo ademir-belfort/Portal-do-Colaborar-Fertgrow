@@ -1,6 +1,6 @@
 {
-  "name": "Fertgrow — Portal do Colaborador",
-  "short_name": "Fertgrow",
+  "name": "MANUTENÇÃO — Portal do Colaborador",
+  "short_name": "MANUTENÇÃO",
   "description": "Escala, ponto, férias e checklist de turno do colaborador Fertgrow.",
   "start_url": "./portal_colaborador.html",
   "scope": "./",

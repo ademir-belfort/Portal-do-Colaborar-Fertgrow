@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-<title>Fertgrow — Portal do Colaborador</title>
+<title>MANUTENÇÃO — Portal do Colaborador</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#0B6B33" />
 <link rel="apple-touch-icon" href="icons/icon-180.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-title" content="Fertgrow" />
+<meta name="apple-mobile-web-app-title" content="MANUTENÇÃO" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root{
@@ -202,6 +202,17 @@
     if(hours > expected) return { normalHours:expected, overtimeHours: round2(hours-expected), kind:"workday" };
     return { normalHours:hours, overtimeHours:0, kind:null };
   }
+  // Resolve qual turno valia numa data específica, usando state.shiftHistory (histórico de trocas
+  // gravado pelo gestor) — acha a linha com o maior effectiveFrom que ainda seja <= dateISO. Sem
+  // histórico (nunca teve troca rastreada), cai no turno atual (state.shift).
+  function shiftForDate(dateISO){
+    const history = state.shiftHistory || [];
+    if(!history.length) return state.shift;
+    let resolved = null;
+    history.forEach(h => { if(h.effectiveFrom <= dateISO && (!resolved || h.effectiveFrom > resolved.effectiveFrom)) resolved = h; });
+    const shiftId = resolved ? resolved.shiftId : history.reduce((a,b)=> a.effectiveFrom < b.effectiveFrom ? a : b).shiftId;
+    return state.shifts.find(s=>s.id===shiftId) || null;
+  }
 
   // ---------------- estado ----------------
   let state = {
@@ -231,6 +242,7 @@
     allEmployeesPublic: [], // [{id, name, cargo}] via RPC list_public_employees() — só pra busca de colegas
     notifications: [],
     dssToday: null,
+    shiftHistory: [],
     dssExpanded: false,
     tab: "escala",
     calMonth: todayISO().slice(0,7),
@@ -251,7 +263,7 @@
 
   function unconfiguredHTML(){
     return `
-      <header class="top"><div class="brand">Fertgrow — Portal do Colaborador</div></header>
+      <header class="top"><div class="brand">MANUTENÇÃO — Portal do Colaborador</div></header>
       <main>
         <div class="card">
           <p style="margin-top:0">Este portal ainda não foi conectado ao banco compartilhado.</p>
@@ -263,7 +275,7 @@
   function authHTML(){
     const isSignup = state.authMode==="signup";
     return `
-      <header class="top"><div class="brand">Fertgrow</div><div class="who">Portal do Colaborador</div></header>
+      <header class="top"><div class="brand">MANUTENÇÃO</div><div class="who">Portal do Colaborador</div></header>
       <main>
         <div class="tabs2">
           <div class="t ${!isSignup?'active':''}" data-authtab="login">Entrar</div>
@@ -282,7 +294,7 @@
 
   function unlinkedHTML(){
     return `
-      <header class="top"><div class="brand">Fertgrow</div><div class="who">Portal do Colaborador</div></header>
+      <header class="top"><div class="brand">MANUTENÇÃO</div><div class="who">Portal do Colaborador</div></header>
       <main>
         <div class="card">
           <p style="margin-top:0">Sua conta foi criada, mas não encontrei nenhum funcionário cadastrado com esse e-mail.</p>
@@ -316,6 +328,7 @@
   // usada pela Edge Function pra assinar o envio, precisa ficar em segredo).
   const VAPID_PUBLIC_KEY = "BIHu1eHh0KBXtE7FSxQDOOynFcAsz-IqH8XFl7p086hZnyU8rx4Er852OQgOgTy4oloikicxuXqY4BXoRRNnqUY";
   let pushDismissed = false; // esconde o botão nesta sessão depois de ativar ou de decidir não ativar agora
+  let replyOpenForRequestId = null; // id da solicitação geral com a caixa de resposta aberta, se houver
   function urlBase64ToUint8Array(base64String){
     const padding = "=".repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -449,7 +462,7 @@
           ${WEEKDAY_LABELS.map(w=>`<div class="dow">${w}</div>`).join("")}
           ${cells.map(dateISO => {
             if(!dateISO) return `<div></div>`;
-            const style = attendanceDayStyle(state.employee, state.shift, state.holidays, state.attendance, dateISO);
+            const style = attendanceDayStyle(state.employee, shiftForDate(dateISO), state.holidays, state.attendance, dateISO);
             const day = Number(dateISO.slice(8,10));
             const todayMark = dateISO===todayISO() ? "box-shadow:0 0 0 2px var(--brand-light) inset;" : "";
             return `<div class="day" data-calday="${dateISO}" title="${esc(style.label)} · toque pra justificar falta ou pedir folga" style="background:${style.bg};color:${style.color};${todayMark}cursor:pointer">${day}</div>`;
@@ -472,25 +485,44 @@
       </div>
       ${(() => { const naoFerias = state.myRequests.filter(r=>r.type!=="ferias"); return naoFerias.length ? `
       <div class="card" style="padding:4px 16px;margin-top:10px">
-        ${naoFerias.slice(0,20).map(r => `
+        ${naoFerias.slice(0,20).map(r => {
+          const isGeneral = r.type==="solicitacao_geral";
+          const awaitingAction = isGeneral && r.status!=="pendente" && !r.finalizado_em;
+          const showReplyBox = awaitingAction && replyOpenForRequestId===r.id;
+          return `
           <div class="req-row">
-            <div class="d">${r.type==="solicitacao_geral" ? esc(r.title||"Solicitação") : `${REQUEST_TYPE_LABEL[r.type]} — ${brDate(r.date_start)}`}</div>
+            <div class="d">${isGeneral ? `${r.ticket_number?`#${r.ticket_number} — `:""}${esc(r.title||"Solicitação")}` : `${REQUEST_TYPE_LABEL[r.type]} — ${brDate(r.date_start)}`}</div>
             ${r.reason ? `<div class="sub">${esc(r.reason)}</div>` : ""}
             <span class="badge ${r.status}" style="margin-top:6px;display:inline-block">${REQUEST_STATUS_LABEL[r.status]}</span>
             ${r.admin_response ? `<div class="sub" style="margin-top:4px">Resposta do gestor: ${esc(r.admin_response)}</div>` : ""}
-          </div>`).join("")}
+            ${r.colaborador_reply ? `<div class="sub" style="margin-top:4px">Sua resposta: ${esc(r.colaborador_reply)}</div>` : ""}
+            ${isGeneral && r.finalizado_em ? `<div class="sub" style="margin-top:4px">🔒 Finalizada em ${brDate(r.finalizado_em.slice(0,10))}</div>` : ""}
+            ${awaitingAction && !r.colaborador_reply ? `
+              <div class="row-flex" style="margin-top:8px;gap:6px">
+                <button class="btn ghost small" type="button" data-toggle-reply="${r.id}">${showReplyBox?"Cancelar":"Responder"}</button>
+                <button class="btn ghost small" type="button" data-finalize-req="${r.id}">Finalizar</button>
+              </div>
+              ${showReplyBox ? `
+                <div style="margin-top:6px">
+                  <textarea class="input" id="reply_${r.id}" rows="2" placeholder="Escreva sua resposta..."></textarea>
+                  <button class="btn small" type="button" style="margin-top:6px" data-send-reply="${r.id}">Enviar resposta</button>
+                </div>` : ""}
+            ` : ""}
+          </div>`; }).join("")}
       </div>` : `<p style="color:var(--muted);font-size:12px;margin-top:10px">Nenhuma solicitação ainda.</p>`; })()}
     `;
   }
 
   function pontoHTML(){
-    const sorted = [...state.attendance].sort((a,b)=> a.date < b.date ? 1 : -1).slice(0, 60);
+    const since = addDays(todayISO(), -6); // últimos 7 dias (hoje incluso) — lista completa polui muito
+    const sorted = [...state.attendance].filter(a=>a.date>=since).sort((a,b)=> a.date < b.date ? 1 : -1);
     return `
       <h2 class="section">Meus apontamentos</h2>
+      <p style="font-size:11.5px;color:var(--muted);margin:-8px 0 10px">Últimos 7 dias</p>
       <div class="card" style="padding:4px 16px">
         ${sorted.length ? sorted.map(a => {
           const status = attendanceStatus(a);
-          const ob = attendanceEntryHoursBreakdown(state.shift, state.holidays, a);
+          const ob = attendanceEntryHoursBreakdown(shiftForDate(a.date), state.holidays, a);
           return `
           <div class="att-row">
             <div>
@@ -673,9 +705,18 @@
     const queue = loadPendingSyncQueue();
     queue.push({ id: uid(), kind, payload, createdAt: new Date().toISOString() });
     savePendingSyncQueue(queue);
+    cachedPendingSyncCount = queue.length;
     refreshPendingSyncBadge();
   }
-  function pendingSyncCount(){ return loadPendingSyncQueue().length; }
+  // pendingSyncCount() é lido no template a cada render() (troca de aba, clique, o poll de 30s...) —
+  // cachear em memória evita reabrir e reanalisar o localStorage inteiro toda vez só pra saber um
+  // tamanho, já que loadPendingSyncQueue/savePendingSyncQueue já mantêm isso atualizado nas duas únicas
+  // funções que de fato mudam a fila (enqueuePendingSync e flushPendingQueue).
+  let cachedPendingSyncCount = null;
+  function pendingSyncCount(){
+    if(cachedPendingSyncCount===null) cachedPendingSyncCount = loadPendingSyncQueue().length;
+    return cachedPendingSyncCount;
+  }
   function refreshPendingSyncBadge(){
     const el = document.getElementById("pendingSyncBadge");
     const n = pendingSyncCount();
@@ -711,6 +752,7 @@
         if(!ok) break; // mantém a ordem — para na primeira falha, tenta o resto na próxima rodada
         queue = queue.slice(1);
         savePendingSyncQueue(queue);
+        cachedPendingSyncCount = queue.length;
       }
     } finally {
       flushingPendingSync = false;
@@ -912,6 +954,45 @@
       }
     });
   }
+  // Responder ou finalizar uma solicitação geral já respondida pelo gestor — só essas duas colunas
+  // podem ser alteradas pelo colaborador (RLS+trigger no banco garantem isso mesmo se alguém tentar
+  // forçar outra coisa pela API direto).
+  async function submitGeneralRequestReply(requestId, replyText){
+    if(!replyText.trim()) return;
+    const req = state.myRequests.find(r=>r.id===requestId);
+    if(req) req.colaborador_reply = replyText.trim();
+    replyOpenForRequestId = null;
+    render();
+    try{
+      const { error } = await supabase.from("time_off_requests").update({ colaborador_reply: replyText.trim() }).eq("id", requestId);
+      if(error) throw error;
+    }catch(err){ alert("Não consegui enviar sua resposta agora — tente de novo em instantes: "+err.message); }
+  }
+  async function finalizeGeneralRequest(requestId){
+    if(!confirm("Finalizar essa solicitação? Depois disso não dá mais pra responder.")) return;
+    const finalizadoEm = new Date().toISOString();
+    const req = state.myRequests.find(r=>r.id===requestId);
+    if(req) req.finalizado_em = finalizadoEm;
+    render();
+    try{
+      const { error } = await supabase.from("time_off_requests").update({ finalizado_em: finalizadoEm }).eq("id", requestId);
+      if(error) throw error;
+    }catch(err){ alert("Não consegui finalizar agora — tente de novo em instantes: "+err.message); }
+  }
+  // Mesma checagem de "2 dias sem ação" do painel do gestor — cobre o caso do colaborador nunca mais
+  // abrir o portal depois que o gestor respondeu (o painel também faz essa varredura no próprio boot).
+  async function autoFinalizeStaleGeneralRequests(){
+    const twoDaysAgo = new Date(Date.now() - 2*86400000).toISOString();
+    const stale = state.myRequests.filter(r =>
+      r.type==="solicitacao_geral" && r.status!=="pendente" && !r.finalizado_em && r.admin_responded_at && r.admin_responded_at < twoDaysAgo
+    );
+    if(!stale.length) return;
+    const finalizadoEm = new Date().toISOString();
+    await Promise.all(stale.map(async r => {
+      const { error } = await supabase.from("time_off_requests").update({ finalizado_em: finalizadoEm }).eq("id", r.id);
+      if(!error) r.finalizado_em = finalizadoEm;
+    }));
+  }
 
   // ---------------- férias (aba própria, fora do modal de solicitação) ----------------
   function openFeriasRequestModal(){
@@ -1037,7 +1118,7 @@
 
   // ---------------- data loading ----------------
   async function loadEmployeeData(){
-    const [{data: shifts}, {data: holidays}, {data: attendance}, {data: myRequests}, {data: checklistCategories}, {data: checklistAreas}, {data: checklistEquipment}, {data: allEmployeesPublic}, {data: checklistHistory}, {data: checklistTodayRows}, {data: notifications}, {data: dssToday}] = await Promise.all([
+    const [{data: shifts}, {data: holidays}, {data: attendance}, {data: myRequests}, {data: checklistCategories}, {data: checklistAreas}, {data: checklistEquipment}, {data: allEmployeesPublic}, {data: checklistHistory}, {data: checklistTodayRows}, {data: notifications}, {data: dssToday}, {data: shiftHistory}] = await Promise.all([
       supabase.from("shifts").select("*"),
       supabase.from("holidays").select("*"),
       supabase.from("attendance").select("*").eq("employee_id", state.employee.id),
@@ -1050,6 +1131,7 @@
       supabase.from("daily_checklists").select("*").eq("employee_id", state.employee.id).eq("date", todayISO()),
       supabase.from("notifications").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
       supabase.from("dss_topics").select("*").eq("date", todayISO()).maybeSingle(),
+      supabase.from("employee_shift_history").select("*").eq("employee_id", state.employee.id).order("effective_from"),
     ]);
     state.shifts = shifts || [];
     state.holidays = holidays || [];
@@ -1063,6 +1145,7 @@
     state.checklistTodayRows = checklistTodayRows || [];
     state.notifications = notifications || [];
     state.dssToday = dssToday || null;
+    state.shiftHistory = (shiftHistory || []).map(r => ({ shiftId: r.shift_id, effectiveFrom: r.effective_from }));
     state.shift = state.shifts.find(s=>s.id===state.employee.shift_id) || null;
     if(state.employee.company_id){
       const { data: company } = await supabase.from("companies").select("*").eq("id", state.employee.company_id).maybeSingle();
@@ -1070,6 +1153,28 @@
     }
     // checklistToday/checklistDraft/checklistColegas dependem da categoria escolhida — montados em
     // selectChecklistCategory(), já que nenhuma categoria está selecionada logo após o login.
+  }
+  // Versão enxuta de loadEmployeeData, só com o que pode mudar de fora (ação do gestor) enquanto o
+  // colaborador está com o app aberto — usada pelo poll de 30s. shifts/holidays/checklist_categories/
+  // checklist_areas/checklist_equipment/allEmployeesPublic/companies praticamente nunca mudam no meio
+  // de um turno, então refetchar tudo de novo a cada 30s só gastaria dado móvel/bateria à toa.
+  async function loadLiveUpdates(){
+    const [{data: myRequests}, {data: notifications}, {data: dssToday}, {data: attendance}, {data: shiftHistory}] = await Promise.all([
+      supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
+      supabase.from("notifications").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
+      supabase.from("dss_topics").select("*").eq("date", todayISO()).maybeSingle(),
+      supabase.from("attendance").select("*").eq("employee_id", state.employee.id),
+      supabase.from("employee_shift_history").select("*").eq("employee_id", state.employee.id).order("effective_from"),
+    ]);
+    state.myRequests = myRequests || [];
+    state.notifications = notifications || [];
+    state.dssToday = dssToday || null;
+    state.attendance = attendance || [];
+    // Se o gestor trocou o turno do colaborador com o app aberto, isso é o que faz a escala/calendário
+    // refletir a troca sem precisar relogar — state.shift (turno "de hoje", usado só de rótulo no
+    // cabeçalho) fica intencionalmente parado até o próximo login, já que shiftForDate() (usada no
+    // calendário/apontamentos) resolve pelo histórico, não por state.shift.
+    state.shiftHistory = (shiftHistory || []).map(r => ({ shiftId: r.shift_id, effectiveFrom: r.effective_from }));
   }
   // Escolhe a categoria de checklist ativa nesta sessão e monta o rascunho a partir do envio de
   // hoje PRA ESSA categoria, se já existir (cada categoria tem sua própria linha em daily_checklists).
@@ -1102,6 +1207,7 @@
     state.view = "app"; state.tab = "escala";
     render();
     flushPendingQueue(); // pode ter sobrado fila de uma sessão offline anterior
+    autoFinalizeStaleGeneralRequests();
   }
 
   // ---------------- wiring ----------------
@@ -1151,6 +1257,15 @@
       if(dssCard) dssCard.addEventListener("click", () => { state.dssExpanded = !state.dssExpanded; render(); });
       const newGeneralReqBtn = $("#newGeneralReqBtn");
       if(newGeneralReqBtn) newGeneralReqBtn.addEventListener("click", openGeneralRequestModal);
+      document.querySelectorAll("[data-toggle-reply]").forEach(el => el.addEventListener("click", () => {
+        replyOpenForRequestId = replyOpenForRequestId===el.dataset.toggleReply ? null : el.dataset.toggleReply;
+        render();
+      }));
+      document.querySelectorAll("[data-send-reply]").forEach(el => el.addEventListener("click", () => {
+        const box = $("#reply_"+el.dataset.sendReply);
+        submitGeneralRequestReply(el.dataset.sendReply, box ? box.value : "");
+      }));
+      document.querySelectorAll("[data-finalize-req]").forEach(el => el.addEventListener("click", () => finalizeGeneralRequest(el.dataset.finalizeReq)));
     }
     if(state.tab==="ferias"){
       const newFeriasBtn = $("#newFeriasBtn");
@@ -1246,6 +1361,20 @@
   // não estiver vazia.
   window.addEventListener("online", flushPendingQueue);
   setInterval(() => { if(pendingSyncCount()>0) flushPendingQueue(); }, 30000);
+
+  // Sem isso, status de solicitação/notificações/DSS só atualizavam num reload manual — busca de novo
+  // em segundo plano a cada 30s. Pula a re-renderização (mas mantém os dados buscados pra próxima vez)
+  // se o colaborador estiver com um campo em foco ou um modal aberto, pra não interromper o que ele
+  // estiver digitando.
+  setInterval(async () => {
+    if(state.view!=="app") return;
+    const activeTag = document.activeElement && document.activeElement.tagName;
+    if(activeTag==="INPUT" || activeTag==="TEXTAREA" || activeTag==="SELECT") return;
+    if($("#modalRoot") && $("#modalRoot").innerHTML.trim()) return;
+    await loadLiveUpdates();
+    await autoFinalizeStaleGeneralRequests();
+    render();
+  }, 30000);
 
   bootstrap();
 })();
