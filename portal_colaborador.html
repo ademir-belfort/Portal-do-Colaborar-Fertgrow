@@ -132,7 +132,9 @@
   // ---------------- helpers (mesma lógica do painel do gestor) ----------------
   const $ = (sel, root=document) => root.querySelector(sel);
   const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const todayISO = () => new Date().toISOString().slice(0,10);
+  // new Date().toISOString() converte pra UTC — perto da meia-noite local (Brasil, UTC-3) isso pode
+  // devolver o dia de AMANHÃ. Monta a data a partir dos componentes locais em vez disso.
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
   const uid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
     const r = Math.random()*16|0, v = c==="x" ? r : (r&0x3|0x8);
     return v.toString(16);
@@ -148,7 +150,7 @@
   function round2(n){ return Math.round((Number(n)||0)*100)/100; }
   const WEEKDAY_LABELS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
   const ATTENDANCE_STATUS_LABELS = { presente:"Presente", falta:"Falta", folga:"Folga", ferias:"Férias" };
-  const REQUEST_TYPE_LABEL = { falta:"Falta", folga:"Folga", ferias:"Férias", solicitacao_geral:"Solicitação" };
+  const REQUEST_TYPE_LABEL = { falta:"Falta", folga:"Folga", ferias:"Férias", solicitacao_geral:"Solicitação", atraso:"Atraso" };
   const NOTIFICATION_ICON = { turno:"🔄", ferias:"🏖️", desempenho:"⚠️", dss:"🦺", solicitacao_geral:"📝" };
   const REQUEST_STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", rejeitado:"Rejeitado" };
   const CHECKLIST_STATUS_OPTIONS = ["✅","❌","⚠️","🚧","🚨"];
@@ -404,6 +406,49 @@
     }
     renderList();
   }
+  function openChangePasswordModal(){
+    $("#modalRoot").innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal">
+          <div class="modal-head"><h3>Trocar senha</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+          <div class="field"><label>Senha atual</label><input type="password" class="input" id="cp_current" autocomplete="current-password" /></div>
+          <div class="field" style="margin-top:10px"><label>Nova senha</label><input type="password" class="input" id="cp_new" autocomplete="new-password" /></div>
+          <div class="field" style="margin-top:10px"><label>Confirmar nova senha</label><input type="password" class="input" id="cp_confirm" autocomplete="new-password" /></div>
+          <div id="cp_msg" class="msg err" style="display:none;margin-top:10px"></div>
+          <div class="modal-actions">
+            <button class="btn ghost" id="cancelModal" type="button">Cancelar</button>
+            <button class="btn" id="cp_submit" type="button">Salvar nova senha</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = () => { $("#modalRoot").innerHTML = ""; };
+    $("#closeModal").addEventListener("click", close);
+    $("#cancelModal").addEventListener("click", close);
+    $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
+    $("#cp_submit").addEventListener("click", async () => {
+      const msgEl = $("#cp_msg");
+      const showErr = (msg) => { msgEl.className = "msg err"; msgEl.textContent = msg; msgEl.style.display = "block"; };
+      msgEl.style.display = "none";
+      const current = $("#cp_current").value;
+      const novaSenha = $("#cp_new").value;
+      const confirmSenha = $("#cp_confirm").value;
+      if(!current || !novaSenha || !confirmSenha){ showErr("Preencha todos os campos."); return; }
+      if(novaSenha.length < 6){ showErr("A nova senha precisa ter pelo menos 6 caracteres."); return; }
+      if(novaSenha !== confirmSenha){ showErr("A confirmação não bate com a nova senha."); return; }
+      const btn = $("#cp_submit"); btn.disabled = true; btn.textContent = "Salvando…";
+      try{
+        // Reautentica com a senha atual antes de trocar — evita que alguém troque a senha de outra
+        // pessoa só porque achou uma sessão aberta no celular de um colega.
+        const { error: reauthErr } = await supabase.auth.signInWithPassword({ email: state.session.user.email, password: current });
+        if(reauthErr){ showErr("Senha atual incorreta."); btn.disabled=false; btn.textContent="Salvar nova senha"; return; }
+        const { error: updateErr } = await supabase.auth.updateUser({ password: novaSenha });
+        if(updateErr){ showErr("Não consegui trocar a senha: "+updateErr.message); btn.disabled=false; btn.textContent="Salvar nova senha"; return; }
+        close();
+        alert("Senha alterada com sucesso!");
+      }catch(err){ showErr("Falha de conexão: "+err.message); btn.disabled=false; btn.textContent="Salvar nova senha"; }
+    });
+  }
   function appShellHTML(){
     const e = state.employee;
     const unseenEscala = unseenRequestUpdatesCount(false);
@@ -418,6 +463,7 @@
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
             ${bellButtonHTML()}
+            <button type="button" class="btn ghost small" id="changePasswordBtn" style="width:auto;padding:8px 12px;white-space:nowrap">🔑 Senha</button>
             ${installButtonHTML()}
             ${pushButtonHTML()}
           </div>
@@ -465,7 +511,7 @@
             const style = attendanceDayStyle(state.employee, shiftForDate(dateISO), state.holidays, state.attendance, dateISO);
             const day = Number(dateISO.slice(8,10));
             const todayMark = dateISO===todayISO() ? "box-shadow:0 0 0 2px var(--brand-light) inset;" : "";
-            return `<div class="day" data-calday="${dateISO}" title="${esc(style.label)} · toque pra justificar falta ou pedir folga" style="background:${style.bg};color:${style.color};${todayMark}cursor:pointer">${day}</div>`;
+            return `<div class="day" data-calday="${dateISO}" title="${esc(style.label)} · toque pra ver os detalhes do dia" style="background:${style.bg};color:${style.color};${todayMark}cursor:pointer">${day}</div>`;
           }).join("")}
         </div>
         <div class="legend2">
@@ -476,12 +522,12 @@
           <span><span class="dot" style="background:rgba(167,139,250,.8)"></span>Feriado</span>
           <span><span class="dot" style="background:transparent;border:1px solid var(--border)"></span>Folga</span>
         </div>
-        <p style="font-size:11px;color:var(--muted);margin:10px 0 0;text-align:center">Toque num dia pra justificar falta ou pedir folga</p>
+        <p style="font-size:11px;color:var(--muted);margin:10px 0 0;text-align:center">Toque num dia pra ver os detalhes</p>
       </div>
       ${!state.shift ? `<p style="color:var(--muted);font-size:12.5px;margin-top:12px">Você ainda não tem um turno padrão definido — fale com o gestor.</p>` : ""}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px">
         <h2 class="section" style="margin:0">Minhas solicitações</h2>
-        <button class="btn ghost small" id="newGeneralReqBtn" type="button">+ Nova solicitação geral</button>
+        <button class="btn ghost small" id="newRequestBtn" type="button">+ Nova solicitação</button>
       </div>
       ${(() => { const naoFerias = state.myRequests.filter(r=>r.type!=="ferias"); return naoFerias.length ? `
       <div class="card" style="padding:4px 16px;margin-top:10px">
@@ -515,24 +561,41 @@
 
   function pontoHTML(){
     const since = addDays(todayISO(), -6); // últimos 7 dias (hoje incluso) — lista completa polui muito
-    const sorted = [...state.attendance].filter(a=>a.date>=since).sort((a,b)=> a.date < b.date ? 1 : -1);
+    // Comparação por valor numérico de data (não por string) — robusta contra qualquer formatação de
+    // data fora do padrão zero-padded "AAAA-MM-DD" (ex: "2026-1-15"), que na comparação de STRING pura
+    // podia ficar "maior" que uma data recente tipo "2026-08-18" e vazar pra dentro do filtro por engano.
+    const sinceTime = new Date(since+"T00:00:00").getTime();
+    const recent = state.attendance.filter(a => {
+      const t = new Date(a.date+"T00:00:00").getTime();
+      return !Number.isNaN(t) && t >= sinceTime;
+    });
+    // Férias é uma natureza de registro diferente de ponto do dia a dia — mistura os dois na mesma
+    // lista deixa a tela poluída, então ficam em seções separadas.
+    const ponto = recent.filter(a => attendanceStatus(a)!=="ferias").sort((a,b)=> a.date < b.date ? 1 : -1);
+    const ferias = recent.filter(a => attendanceStatus(a)==="ferias").sort((a,b)=> a.date < b.date ? 1 : -1);
+    const rowHTML = (a) => {
+      const status = attendanceStatus(a);
+      const ob = attendanceEntryHoursBreakdown(shiftForDate(a.date), state.holidays, a);
+      return `
+      <div class="att-row">
+        <div>
+          <div class="d">${brDate(a.date)}</div>
+          <div class="sub">${esc(a.turno||"")}${a.hours?` · ${a.hours}h`:""}${ob.overtimeHours>0?` · ⚡${ob.overtimeHours}h extra`:""}${a.atraso?` · ⏰ atraso`:""}</div>
+        </div>
+        <span class="badge ${status}">${ATTENDANCE_STATUS_LABELS[status]||status}</span>
+      </div>`;
+    };
     return `
       <h2 class="section">Meus apontamentos</h2>
       <p style="font-size:11.5px;color:var(--muted);margin:-8px 0 10px">Últimos 7 dias</p>
       <div class="card" style="padding:4px 16px">
-        ${sorted.length ? sorted.map(a => {
-          const status = attendanceStatus(a);
-          const ob = attendanceEntryHoursBreakdown(shiftForDate(a.date), state.holidays, a);
-          return `
-          <div class="att-row">
-            <div>
-              <div class="d">${brDate(a.date)}</div>
-              <div class="sub">${esc(a.turno||"")}${a.hours?` · ${a.hours}h`:""}${ob.overtimeHours>0?` · ⚡${ob.overtimeHours}h extra`:""}</div>
-            </div>
-            <span class="badge ${status}">${ATTENDANCE_STATUS_LABELS[status]||status}</span>
-          </div>`;
-        }).join("") : `<div class="empty">Nenhum apontamento registrado ainda.</div>`}
+        ${ponto.length ? ponto.map(rowHTML).join("") : `<div class="empty">Nenhum apontamento de ponto nos últimos 7 dias.</div>`}
       </div>
+      ${ferias.length ? `
+      <h2 class="section" style="margin-top:20px">Férias no período</h2>
+      <div class="card" style="padding:4px 16px">
+        ${ferias.map(rowHTML).join("")}
+      </div>` : ""}
     `;
   }
 
@@ -853,64 +916,142 @@
   }
 
   // ---------------- modal de solicitação (falta/folga/férias) ----------------
-  function openRequestModal(dateISO){
-    let reqType = "falta";
-
-    function bodyHTML(){
-      return `
-        <div class="field"><label>Data</label><div style="padding:11px 12px;background:var(--surface2);border-radius:9px;font-size:14px">${brDate(dateISO)}</div></div>
-        <div class="field"><label>Motivo</label><textarea class="input" id="req_reason" style="min-height:80px" placeholder="${reqType==='falta'?'Ex: atraso no transporte, falta por consulta médica, etc.':'Ex: compromisso pessoal'}"></textarea></div>
-      `;
-    }
-    function renderModal(){
-      $("#modalRoot").innerHTML = `
-        <div class="modal-backdrop" id="backdrop">
-          <div class="modal">
-            <div class="modal-head"><h3>Nova solicitação</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
-            <div class="tabs2">
-              <div class="t ${reqType==='falta'?'active':''}" data-reqtype="falta">Falta</div>
-              <div class="t ${reqType==='folga'?'active':''}" data-reqtype="folga">Folga</div>
-            </div>
-            ${bodyHTML()}
-            <div class="modal-actions">
-              <button class="btn ghost" id="cancelModal" type="button">Cancelar</button>
-              <button class="btn" id="submitReq" type="button">Enviar pedido</button>
-            </div>
+  // Menu de escolha do tipo de solicitação — o clique num dia da escala não abre mais isso direto
+  // (virou openDayStatusModal, só informativo); a solicitação agora começa sempre por aqui.
+  const NEW_REQUEST_TYPES = [
+    { type:"folga", ic:"🌴", lbl:"Solicitar folga", sub:"Pede uma folga numa data específica" },
+    { type:"atraso", ic:"⏰", lbl:"Reportar atraso", sub:"Avisa o gestor sobre um atraso, com motivo" },
+    { type:"falta", ic:"🚫", lbl:"Reportar falta", sub:"Avisa o gestor sobre uma falta, com motivo" },
+    { type:"solicitacao_geral", ic:"📝", lbl:"Outra solicitação", sub:"Crachá, dúvida, ou qualquer outro assunto" },
+  ];
+  function openNewRequestTypeMenu(){
+    $("#modalRoot").innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal">
+          <div class="modal-head"><h3>Nova solicitação</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${NEW_REQUEST_TYPES.map(t=>`
+              <button type="button" class="card" data-reqtypepick="${t.type}" style="width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px">
+                <span style="font-size:20px">${t.ic}</span>
+                <span><span style="font-weight:600;display:block">${t.lbl}</span><span style="font-size:11.5px;color:var(--muted)">${t.sub}</span></span>
+              </button>`).join("")}
+          </div>
+          <div class="modal-actions"><button class="btn ghost" id="cancelModal" type="button">Cancelar</button></div>
+        </div>
+      </div>
+    `;
+    const close = () => { $("#modalRoot").innerHTML = ""; };
+    $("#closeModal").addEventListener("click", close);
+    $("#cancelModal").addEventListener("click", close);
+    $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
+    document.querySelectorAll("[data-reqtypepick]").forEach(el => el.addEventListener("click", () => {
+      const type = el.dataset.reqtypepick;
+      close();
+      if(type==="solicitacao_geral") openGeneralRequestModal();
+      else openRequestModal(type);
+    }));
+  }
+  const REQUEST_TYPE_META = {
+    folga: { title:"Solicitar folga", reasonLabel:"Motivo (opcional)", reasonPlaceholder:"Ex: compromisso pessoal", reasonRequired:false },
+    atraso: { title:"Reportar atraso", reasonLabel:"Motivo do atraso", reasonPlaceholder:"Ex: atraso no transporte", reasonRequired:true },
+    falta: { title:"Reportar falta", reasonLabel:"Motivo da falta", reasonPlaceholder:"Ex: consulta médica", reasonRequired:true },
+  };
+  // Falta/folga/atraso: pede a data aqui dentro (input nativo) — antes vinha fixa do dia clicado na
+  // escala, mas esse clique agora só mostra o status do dia (ver openDayStatusModal).
+  function openRequestModal(type){
+    const meta = REQUEST_TYPE_META[type];
+    $("#modalRoot").innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal">
+          <div class="modal-head"><h3>${meta.title}</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+          <div class="field"><label>Data</label><input type="date" class="input" id="req_date" value="${todayISO()}" /></div>
+          <div class="field"><label>${meta.reasonLabel}</label><textarea class="input" id="req_reason" style="min-height:80px" placeholder="${meta.reasonPlaceholder}"></textarea></div>
+          <div class="modal-actions">
+            <button class="btn ghost" id="cancelModal" type="button">Cancelar</button>
+            <button class="btn" id="submitReq" type="button">Enviar pedido</button>
           </div>
         </div>
-      `;
-      wireModal();
-    }
-    function wireModal(){
-      const close = () => { $("#modalRoot").innerHTML = ""; };
-      $("#closeModal").addEventListener("click", close);
-      $("#cancelModal").addEventListener("click", close);
-      $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
-      document.querySelectorAll("[data-reqtype]").forEach(el => el.addEventListener("click", () => {
-        reqType = el.dataset.reqtype;
-        renderModal();
-      }));
-      $("#submitReq").addEventListener("click", async () => {
-        const reasonEl = $("#req_reason");
-        const reason = reasonEl ? reasonEl.value.trim() : "";
-        const payload = {
-          id: uid(), employee_id: state.employee.id, type: reqType, date_start: dateISO, date_end: dateISO, reason,
-          status: "pendente", created_at: new Date().toISOString(),
-        };
-        close();
-        state.myRequests = [payload, ...state.myRequests];
+      </div>
+    `;
+    const close = () => { $("#modalRoot").innerHTML = ""; };
+    $("#closeModal").addEventListener("click", close);
+    $("#cancelModal").addEventListener("click", close);
+    $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
+    $("#submitReq").addEventListener("click", async () => {
+      const dateISO = $("#req_date").value;
+      if(!dateISO){ alert("Selecione uma data."); return; }
+      const reasonEl = $("#req_reason");
+      const reason = reasonEl ? reasonEl.value.trim() : "";
+      if(meta.reasonRequired && !reason){ alert("Informe o motivo."); return; }
+      const payload = {
+        id: uid(), employee_id: state.employee.id, type, date_start: dateISO, date_end: dateISO, reason,
+        status: "pendente", created_at: new Date().toISOString(),
+      };
+      close();
+      state.myRequests = [payload, ...state.myRequests];
+      render();
+      try{
+        const { error } = await supabase.from("time_off_requests").insert(payload);
+        if(error) throw error;
+      }catch(err){
+        enqueuePendingSync("timeoff", payload);
+        alert("Sem conexão no momento — seu pedido foi guardado e será enviado sozinho assim que a internet voltar.");
         render();
-        try{
-          const { error } = await supabase.from("time_off_requests").insert(payload);
-          if(error) throw error;
-        }catch(err){
-          enqueuePendingSync("timeoff", payload);
-          alert("Sem conexão no momento — seu pedido foi guardado e será enviado sozinho assim que a internet voltar.");
-          render();
-        }
-      });
+      }
+    });
+  }
+  // Toque num dia da escala — mostra a situação real daquele dia (não abre mais pedido de falta/folga,
+  // que agora começa sempre pelo botão "+ Nova solicitação").
+  function openDayStatusModal(dateISO){
+    const shift = shiftForDate(dateISO);
+    const info = scheduledDayInfo(state.employee, shift, state.holidays, state.attendance, dateISO);
+    const status = info.attendance ? attendanceStatus(info.attendance) : null;
+    let body;
+    if(info.holiday){
+      body = `<div class="field"><label>Situação</label><div>🎉 Feriado — ${esc(info.holiday.name)}</div></div>`;
+    } else if(status==="presente"){
+      body = `
+        <div class="field"><label>Situação</label><div>✅ Trabalhou</div></div>
+        <div class="field"><label>Turno</label><div>${esc(info.attendance.turno || (shift?shift.name:"—"))}</div></div>
+        ${shift ? `<div class="field"><label>Horário do turno</label><div>${esc(shift.start_time)} às ${esc(shift.end_time)}</div></div>` : ""}
+        <div class="field"><label>Horas registradas</label><div>${info.attendance.hours}h</div></div>
+        ${info.attendance.atraso ? `<div class="field"><label>Observação</label><div>⏰ Chegou atrasado</div></div>` : ""}
+        ${info.attendance.justification ? `<div class="field"><label>Anotação</label><div style="white-space:pre-wrap">${esc(info.attendance.justification)}</div></div>` : ""}
+      `;
+    } else if(status==="falta"){
+      body = `
+        <div class="field"><label>Situação</label><div>❌ Faltou</div></div>
+        ${info.attendance.atestado ? `<div class="field"><label>Atestado</label><div>Sim</div></div>` : ""}
+        ${info.attendance.justification ? `<div class="field"><label>Motivo</label><div style="white-space:pre-wrap">${esc(info.attendance.justification)}</div></div>` : ""}
+      `;
+    } else if(status==="ferias"){
+      body = `<div class="field"><label>Situação</label><div>🏖️ Férias</div></div>`;
+    } else if(status==="folga"){
+      body = `<div class="field"><label>Situação</label><div>😴 Folga (registrada)</div></div>`;
+    } else if(info.scheduled && dateISO >= todayISO()){
+      body = `
+        <div class="field"><label>Situação</label><div>📅 Previsto trabalhar</div></div>
+        <div class="field"><label>Turno</label><div>${esc(shift.name)}</div></div>
+        <div class="field"><label>Horário previsto</label><div>${esc(shift.start_time)} às ${esc(shift.end_time)}</div></div>
+      `;
+    } else if(info.scheduled){
+      body = `<div class="field"><label>Situação</label><div>⚠️ Deveria ter trabalhado, mas ainda não tem apontamento registrado.</div></div>`;
+    } else {
+      body = `<div class="field"><label>Situação</label><div>😴 Folga</div></div>`;
     }
-    renderModal();
+    $("#modalRoot").innerHTML = `
+      <div class="modal-backdrop" id="backdrop">
+        <div class="modal">
+          <div class="modal-head"><h3>${brDate(dateISO)}</h3><button class="btn ghost small" id="closeModal" type="button">✕</button></div>
+          ${body}
+          <div class="modal-actions"><button class="btn ghost" id="cancelModal" type="button">Fechar</button></div>
+        </div>
+      </div>
+    `;
+    const close = () => { $("#modalRoot").innerHTML = ""; };
+    $("#closeModal").addEventListener("click", close);
+    $("#cancelModal").addEventListener("click", close);
+    $("#backdrop").addEventListener("click", e => { if(e.target.id==="backdrop") close(); });
   }
 
   // ---------------- solicitação geral (título+descrição livre, sem data) ----------------
@@ -1242,6 +1383,8 @@
     if(pushBtn) pushBtn.addEventListener("click", enablePushNotifications);
     const bellBtn = $("#bellBtn");
     if(bellBtn) bellBtn.addEventListener("click", openNotificationsModal);
+    const changePasswordBtn = $("#changePasswordBtn");
+    if(changePasswordBtn) changePasswordBtn.addEventListener("click", openChangePasswordModal);
 
     document.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", async () => {
       if(el.dataset.tab==="logout"){ await supabase.auth.signOut(); state = {...state, view:"auth", session:null, profile:null, employee:null}; render(); return; }
@@ -1251,12 +1394,12 @@
     if(state.tab==="escala"){
       $("#calPrev").addEventListener("click", () => { state.calMonth = addMonths(state.calMonth,-1); render(); });
       $("#calNext").addEventListener("click", () => { state.calMonth = addMonths(state.calMonth,1); render(); });
-      document.querySelectorAll("[data-calday]").forEach(el => el.addEventListener("click", () => openRequestModal(el.dataset.calday)));
+      document.querySelectorAll("[data-calday]").forEach(el => el.addEventListener("click", () => openDayStatusModal(el.dataset.calday)));
       localStorage.setItem("lastSeenRequests_"+state.employee.id, new Date().toISOString());
       const dssCard = $("#dssTodayCard");
       if(dssCard) dssCard.addEventListener("click", () => { state.dssExpanded = !state.dssExpanded; render(); });
-      const newGeneralReqBtn = $("#newGeneralReqBtn");
-      if(newGeneralReqBtn) newGeneralReqBtn.addEventListener("click", openGeneralRequestModal);
+      const newRequestBtn = $("#newRequestBtn");
+      if(newRequestBtn) newRequestBtn.addEventListener("click", openNewRequestTypeMenu);
       document.querySelectorAll("[data-toggle-reply]").forEach(el => el.addEventListener("click", () => {
         replyOpenForRequestId = replyOpenForRequestId===el.dataset.toggleReply ? null : el.dataset.toggleReply;
         render();
@@ -1329,8 +1472,34 @@
       state.session = data.session;
       await afterLogin();
     } else {
+      // Falha ao checar bloqueio não deve travar quem está tentando logar normalmente — segue tentando.
+      try{
+        const { data: locked } = await supabase.rpc("is_login_locked", { p_email: email });
+        if(locked){
+          state.authError = "Conta bloqueada após 3 tentativas incorretas. Fale com o gestor pra resetar sua senha.";
+          render();
+          return;
+        }
+      }catch(err){}
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if(error){ state.authError = "E-mail ou senha inválidos."; render(); return; }
+      if(error){
+        try{
+          const { data: result } = await supabase.rpc("record_failed_login", { p_email: email });
+          const r = Array.isArray(result) ? result[0] : result;
+          if(r && r.locked){
+            state.authError = "Conta bloqueada após 3 tentativas incorretas. Fale com o gestor pra resetar sua senha.";
+          } else if(r && r.attempts>0){
+            state.authError = `Senha incorreta. Mais ${Math.max(0,3-r.attempts)} tentativa(s) antes do bloqueio.`;
+          } else {
+            state.authError = "E-mail ou senha inválidos.";
+          }
+        }catch(err){ state.authError = "E-mail ou senha inválidos."; }
+        render();
+        return;
+      }
+      // Fire-and-forget (não atrasa o login por causa disso) — try/catch em vez de encadear .catch()
+      // direto, já que nem todo objeto retornado por .rpc() garante esse método antes de ser aguardado.
+      (async () => { try{ await supabase.rpc("reset_failed_login", { p_email: email }); }catch(err){} })();
       state.session = data.session;
       await afterLogin();
     }
