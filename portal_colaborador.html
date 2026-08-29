@@ -40,8 +40,8 @@
   .tabs2 .t{flex:1;text-align:center;padding:8px;border-radius:7px;font-size:13px;color:var(--muted);cursor:pointer;}
   .tabs2 .t.active{background:var(--brand);color:#fff;font-weight:600;}
   nav.bottom{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;max-width:480px;margin:0 auto;z-index:30;}
-  nav.bottom .n{flex:1;text-align:center;padding:10px 4px 12px;color:var(--muted);cursor:pointer;font-size:11px;position:relative;}
-  nav.bottom .n .ic{font-size:19px;display:block;margin-bottom:2px;}
+  nav.bottom .n{flex:1;text-align:center;padding:10px 2px 12px;color:var(--muted);cursor:pointer;font-size:10px;line-height:1.2;position:relative;}
+  nav.bottom .n .ic{font-size:18px;display:block;margin-bottom:2px;}
   nav.bottom .n.active{color:var(--brand-light);}
   h2.section{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin:0 0 12px;font-weight:700;}
   .cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
@@ -83,6 +83,10 @@
   .eq-status-row{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
   .eq-status-btn{flex:1;min-width:42px;padding:8px 4px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);font-size:16px;cursor:pointer;text-align:center;color:var(--text);}
   .eq-status-btn.active{border-color:var(--brand-light);background:rgba(11,107,51,.3);}
+  .wb-likert-row{display:flex;gap:6px;margin-top:8px;}
+  .wb-likert-btn{flex:1;padding:10px 4px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);font-size:15px;font-weight:700;cursor:pointer;text-align:center;color:var(--text);}
+  .wb-likert-btn.active{border-color:var(--brand-light);background:rgba(11,107,51,.3);color:var(--brand-light);}
+  .wb-score-ring{width:96px;height:96px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;margin:0 auto;border:4px solid var(--border);}
   .eq-details{margin-top:10px;display:flex;flex-direction:column;gap:8px;}
   .eq-details textarea{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 10px;border-radius:8px;font-size:13px;min-height:52px;resize:vertical;font-family:inherit;}
   .mass-bar{position:sticky;top:64px;z-index:15;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:12px;}
@@ -104,8 +108,38 @@
   .hist-row .sub{color:var(--muted);margin-top:2px;}
   .nav-badge{position:absolute;top:2px;right:calc(50% - 22px);background:var(--rose);color:#fff;border-radius:999px;min-width:16px;height:16px;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px;}
   .empty{text-align:center;color:var(--muted);padding:40px 16px;font-size:13px;}
-  .spinner{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
   a.link{color:var(--brand-light);cursor:pointer;text-decoration:underline;font-size:13px;}
+
+  /* ---------------- interface moderna: transições/animações ---------------- */
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;}
+  }
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes modalPop{from{opacity:0;transform:translateY(10px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes pulseBadge{0%,100%{transform:scale(1);}50%{transform:scale(1.15);}}
+  /* main é recriado inteiro a cada render() (innerHTML trocado) -- a animação toca de novo sozinha em
+     toda troca de aba/tela, dando a sensação de transição mesmo sem manter DOM antigo/novo ao mesmo tempo. */
+  main{animation:fadeInUp .22s ease both;}
+  .card{box-shadow:0 1px 3px rgba(0,0,0,.18);transition:border-color .15s ease, transform .12s ease, box-shadow .15s ease;}
+  .btn{transition:background-color .15s ease, transform .08s ease, opacity .15s ease;}
+  .btn:active{transform:scale(.97);}
+  .btn.ghost:active{background:var(--surface2);}
+  .eq-status-btn,.wb-likert-btn,.iconbtn,.tabs2 .t,nav.bottom .n{transition:background-color .15s ease, border-color .15s ease, color .15s ease, transform .1s ease;}
+  .eq-status-btn:active,.wb-likert-btn:active{transform:scale(.94);}
+  nav.bottom .n{-webkit-tap-highlight-color:transparent;}
+  nav.bottom .n:active .ic{transform:scale(.88);}
+  nav.bottom .n .ic{display:inline-block;transition:transform .12s ease;}
+  nav.bottom .n.active::after{content:"";position:absolute;bottom:2px;left:50%;width:4px;height:4px;border-radius:50%;background:var(--brand-light);transform:translateX(-50%);}
+  .nav-badge{animation:pulseBadge 1.8s ease-in-out infinite;}
+  .modal-backdrop{animation:fadeIn .15s ease both;}
+  .modal{animation:modalPop .2s cubic-bezier(.2,.9,.3,1.2) both;}
+  .badge{transition:background-color .15s ease, color .15s ease;}
+  .input{transition:border-color .15s ease;}
+  /* Spinner de carregamento: anel girando em vez de só texto parado */
+  .spinner{text-align:center;padding:52px 16px;color:var(--muted);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:14px;animation:fadeIn .2s ease both;}
+  .spinner::before{content:"";width:34px;height:34px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--brand-light);animation:spin .7s linear infinite;}
 </style>
 </head>
 <body>
@@ -154,6 +188,20 @@
   const NOTIFICATION_ICON = { turno:"🔄", ferias:"🏖️", desempenho:"⚠️", dss:"🦺", solicitacao_geral:"📝" };
   const REQUEST_STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", rejeitado:"Rejeitado" };
   const CHECKLIST_STATUS_OPTIONS = ["✅","❌","⚠️","🚧","🚨"];
+  // Quiz de Bem-estar: 5 perguntas de clima psicológico geral (inspiradas no WHO-5, instrumento validado
+  // e NÃO-clínico, feito pra screening de bem-estar — não é avaliação/diagnóstico) + 3 de satisfação no
+  // trabalho. Likert 1-5 pra todas, pontuação somada e normalizada pra 0-100 pelo banco (ver
+  // compute_wellbeing_score() no schema) — o app nunca calcula/mostra o score, só envia as respostas.
+  const WELLBEING_QUESTIONS = [
+    { id:"q1", text:"Nas últimas semanas, você tem se sentido calmo(a) e tranquilo(a)?", low:"Nunca", high:"Sempre" },
+    { id:"q2", text:"Nas últimas semanas, você tem se sentido com disposição e energia no dia a dia?", low:"Nunca", high:"Sempre" },
+    { id:"q3", text:"Nas últimas semanas, você tem dormido/descansado bem?", low:"Nunca", high:"Sempre" },
+    { id:"q4", text:"Nas últimas semanas, seu dia a dia tem sido preenchido com coisas que você gosta de fazer?", low:"Nunca", high:"Sempre" },
+    { id:"q5", text:"De forma geral, como está seu ânimo/humor nesse período?", low:"Muito ruim", high:"Muito bom" },
+    { id:"q6", text:"Você está satisfeito(a) com seu trabalho atualmente?", low:"Discordo totalmente", high:"Concordo totalmente" },
+    { id:"q7", text:"Você sente que seu esforço é reconhecido pela empresa/equipe?", low:"Discordo totalmente", high:"Concordo totalmente" },
+    { id:"q8", text:"Você consegue equilibrar bem o trabalho com sua vida pessoal?", low:"Discordo totalmente", high:"Concordo totalmente" },
+  ];
 
   function attendanceStatus(entry){
     if(!entry) return null;
@@ -260,6 +308,10 @@
     if(state.view==="loading") return `<div class="spinner">Carregando…</div>`;
     if(state.view==="auth") return authHTML();
     if(state.view==="unlinked") return unlinkedHTML();
+    if(state.view==="app"){
+      const gate = wellbeingGateStatus();
+      if(gate.due) return wellbeingGateHTML(gate.forced);
+    }
     return appShellHTML();
   }
 
@@ -469,12 +521,13 @@
           </div>
         </div>
       </header>
-      <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():checklistHTML()}</main>
+      <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():state.tab==="bemestar"?bemEstarHTML():checklistHTML()}</main>
       <nav class="bottom">
         <div class="n ${state.tab==='escala'?'active':''}" data-tab="escala"><span class="ic">📅</span>Escala${unseenEscala>0?`<span class="nav-badge">${unseenEscala}</span>`:""}</div>
         <div class="n ${state.tab==='ponto'?'active':''}" data-tab="ponto"><span class="ic">🕐</span>Ponto</div>
         <div class="n ${state.tab==='ferias'?'active':''}" data-tab="ferias"><span class="ic">🏖️</span>Férias${unseenFerias>0?`<span class="nav-badge">${unseenFerias}</span>`:""}</div>
         <div class="n ${state.tab==='checklist'?'active':''}" data-tab="checklist"><span class="ic">✅</span>Checklist</div>
+        <div class="n ${state.tab==='bemestar'?'active':''}" data-tab="bemestar"><span class="ic">💚</span>Bem‑estar</div>
         <div class="n" data-tab="logout"><span class="ic">🚪</span>Sair</div>
       </nav>`;
   }
@@ -1257,6 +1310,171 @@
     `;
   }
 
+  // ---------------- Bem-estar (quiz mensal de clima psicológico + satisfação) ----------------
+  function currentPeriodStartISO(){
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
+  }
+  function nextPeriodStartISO(periodISO){
+    const [y,m] = periodISO.split("-").map(Number);
+    const nd = new Date(y, m, 1); // m já é 1-indexado (mês atual) -> new Date(y,m,1) cai no dia 1 do MÊS SEGUINTE
+    return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,"0")}-01`;
+  }
+  function periodLabel(periodISO){
+    const [y,m] = periodISO.split("-").map(Number);
+    const label = new Date(y,m-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+    return label.charAt(0).toUpperCase()+label.slice(1);
+  }
+  function wellbeingScoreColor(score){
+    return score>=70 ? "var(--emerald)" : score>=50 ? "var(--brand-light)" : "var(--rose)";
+  }
+  // Gráfico simples feito à mão (não existe nenhuma lib de gráfico nesse arquivo) — só o próprio
+  // colaborador vê essa evolução, não precisa de mais que uma linha com pontos.
+  function wellbeingChartSVG(history){
+    const points = [...history].reverse().slice(-12); // mais antigo -> mais recente, até 12 pontos
+    if(points.length < 2) return "";
+    const W = 280, H = 90, PAD = 10;
+    const stepX = (W - PAD*2) / (points.length - 1);
+    const yFor = (score) => H - PAD - (Math.max(0,Math.min(100,score))/100) * (H - PAD*2);
+    const coords = points.map((p,i) => [PAD + i*stepX, yFor(Number(p.score)||0)]);
+    const path = coords.map((c,i) => `${i===0?"M":"L"}${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(" ");
+    const dots = coords.map(c => `<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="3" fill="var(--brand-light)" />`).join("");
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;margin-top:8px">
+      <line x1="${PAD}" y1="${yFor(50).toFixed(1)}" x2="${W-PAD}" y2="${yFor(50).toFixed(1)}" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3" />
+      <path d="${path}" fill="none" stroke="var(--brand-light)" stroke-width="2" />
+      ${dots}
+    </svg>`;
+  }
+  // Corpo compartilhado entre a aba normal "Bem-estar" e o gate semanal obrigatório (mesma lógica de
+  // consentimento/quiz/histórico nos dois lugares — só a moldura ao redor muda).
+  function bemEstarBodyHTML(){
+    const wb = state.wellbeing || { history: [] };
+    const consented = !!(state.profile && state.profile.wellbeing_consent_at);
+    if(!consented){
+      return `
+        <div class="card">
+          <p style="margin-top:0;font-size:13.5px;line-height:1.5">Antes de começar, é importante você saber como isso funciona:</p>
+          <ul style="font-size:13px;line-height:1.6;padding-left:18px;margin:0 0 14px">
+            <li>Suas respostas de cada pergunta <b>nunca são vistas pelo seu gestor</b> — só você tem acesso a elas.</li>
+            <li>O <b>resultado final (score)</b> desse questionário fica visível pro seu gestor, com seu nome — isso ajuda a empresa a identificar quando alguém pode precisar de apoio.</li>
+            <li>Se o resultado indicar isso, seu gestor pode entrar em contato com você.</li>
+          </ul>
+          <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px">Esse aviso aparece só essa primeira vez.</p>
+          <button class="btn" id="wbConsentBtn" type="button">Entendi, continuar</button>
+        </div>
+      `;
+    }
+    const currentPeriod = currentPeriodStartISO();
+    const already = wb.history.find(h => h.period_start === currentPeriod);
+    const draft = state.wellbeingDraft || {};
+    let body;
+    if(already){
+      body = `
+        <div class="card" style="text-align:center">
+          <div class="wb-score-ring" style="border-color:${wellbeingScoreColor(already.score)};color:${wellbeingScoreColor(already.score)}">${already.score}</div>
+          <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Seu score de ${periodLabel(already.period_start)}</p>
+          <p style="font-size:12px;color:var(--muted);margin:14px 0 0">Você já respondeu esse mês. Próxima disponível em <b>${brDate(nextPeriodStartISO(currentPeriod))}</b>.</p>
+        </div>
+      `;
+    } else {
+      const allAnswered = WELLBEING_QUESTIONS.every(q => draft[q.id]);
+      body = `
+        <div class="card" style="margin-bottom:14px">
+          <p style="margin:0;font-size:12.5px;color:var(--muted)">Responda com sinceridade — não existe resposta certa ou errada. Leva menos de 2 minutos.</p>
+        </div>
+        ${WELLBEING_QUESTIONS.map((q,i) => `
+          <div class="card" style="margin-bottom:10px">
+            <div style="font-size:13px;font-weight:600">${i+1}. ${esc(q.text)}</div>
+            <div class="wb-likert-row">
+              ${[1,2,3,4,5].map(v => `<button type="button" class="wb-likert-btn ${draft[q.id]===v?'active':''}" data-wbanswer="${q.id}:${v}">${v}</button>`).join("")}
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px">
+              <span>${esc(q.low)}</span><span>${esc(q.high)}</span>
+            </div>
+          </div>
+        `).join("")}
+        <button class="btn" id="wbSubmitBtn" type="button" style="opacity:${allAnswered?1:.5}" ${allAnswered?"":"disabled"}>Enviar</button>
+      `;
+    }
+    const chart = wb.history.length>=2 ? `
+      <h2 class="section" style="margin-top:20px">Sua evolução</h2>
+      <div class="card">${wellbeingChartSVG(wb.history)}</div>
+    ` : "";
+    return `${body}${chart}`;
+  }
+  function bemEstarHTML(){
+    return `<h2 class="section">Bem-estar</h2>${bemEstarBodyHTML()}`;
+  }
+  // ---------------- Gate semanal obrigatório de Bem-estar ----------------
+  // Uma vez por semana, ao entrar, mostra a tela de Bem-estar ANTES do resto do app (sem bottom nav) —
+  // pode adiar ("Lembrar amanhã") só dentro de 2 dias corridos desde que ficou pendente; depois disso
+  // só sai confirmando ("Já vi, obrigado"). "Lembrar amanhã" é só client-side (sessionStorage) — não
+  // mexe no ciclo real de 7 dias, guardado em profiles.wellbeing_prompt_due_at.
+  function wellbeingGateSessionKey(){ return "wbGateDismissed_" + (state.employee ? state.employee.id : ""); }
+  function wellbeingGateStatus(){
+    const dueAtRaw = state.profile && state.profile.wellbeing_prompt_due_at;
+    if(!dueAtRaw) return { due:false };
+    const dueAt = new Date(dueAtRaw);
+    const daysOverdue = (Date.now() - dueAt.getTime()) / 86400000;
+    if(daysOverdue < 0) return { due:false };
+    const forced = daysOverdue > 2;
+    const dismissedThisSession = !forced && sessionStorage.getItem(wellbeingGateSessionKey()) === "1";
+    return { due: !dismissedThisSession, forced };
+  }
+  function wellbeingGateHTML(forced){
+    const consented = !!(state.profile && state.profile.wellbeing_consent_at);
+    return `
+      <header class="top"><div class="brand">MANUTENÇÃO</div><div class="who">💚 Check-in semanal de bem-estar</div></header>
+      <main>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 14px">É rapidinho — reservamos um momento por semana pra você olhar pro seu próprio bem-estar antes de continuar.</p>
+        ${bemEstarBodyHTML()}
+        ${consented ? `
+        <div style="display:flex;gap:10px;margin-top:16px">
+          ${forced ? "" : `<button class="btn ghost" id="wbGateSnoozeBtn" type="button" style="flex:1">Lembrar amanhã</button>`}
+          <button class="btn" id="wbGateAckBtn" type="button" style="flex:1">Já vi, obrigado</button>
+        </div>` : ""}
+      </main>
+    `;
+  }
+  // Compartilhado entre a aba normal "Bem-estar" e o gate semanal — os dois renderizam o MESMO corpo
+  // (bemEstarBodyHTML), então precisam ligar os mesmos botões (consentimento, respostas, enviar).
+  function wireBemEstarBody(){
+    const consentBtn = $("#wbConsentBtn");
+    if(consentBtn) consentBtn.addEventListener("click", async () => {
+      consentBtn.disabled = true;
+      try{
+        await supabase.rpc("record_wellbeing_consent");
+        state.profile.wellbeing_consent_at = new Date().toISOString();
+      }catch(err){ alert("Não consegui registrar seu aceite: "+err.message); }
+      consentBtn.disabled = false;
+      render();
+    });
+    document.querySelectorAll("[data-wbanswer]").forEach(el => el.addEventListener("click", () => {
+      const [qid, val] = el.dataset.wbanswer.split(":");
+      state.wellbeingDraft = state.wellbeingDraft || {};
+      state.wellbeingDraft[qid] = Number(val);
+      render();
+    }));
+    const submitBtn = $("#wbSubmitBtn");
+    if(submitBtn) submitBtn.addEventListener("click", async () => {
+      const draft = state.wellbeingDraft || {};
+      if(!WELLBEING_QUESTIONS.every(q => draft[q.id])) return;
+      submitBtn.disabled = true; submitBtn.textContent = "Enviando…";
+      const periodStart = currentPeriodStartISO();
+      const { data, error } = await supabase.from("wellbeing_responses")
+        .insert({ employee_id: state.employee.id, period_start: periodStart, answers: draft })
+        .select("period_start, score, created_at").maybeSingle();
+      if(error){
+        alert("Não consegui enviar suas respostas: "+error.message);
+        submitBtn.disabled = false; submitBtn.textContent = "Enviar";
+        return;
+      }
+      state.wellbeing.history = [data, ...(state.wellbeing.history||[])];
+      state.wellbeingDraft = {};
+      render();
+    });
+  }
+
   // ---------------- data loading ----------------
   async function loadEmployeeData(){
     const [{data: shifts}, {data: holidays}, {data: attendance}, {data: myRequests}, {data: checklistCategories}, {data: checklistAreas}, {data: checklistEquipment}, {data: allEmployeesPublic}, {data: checklistHistory}, {data: checklistTodayRows}, {data: notifications}, {data: dssToday}, {data: shiftHistory}] = await Promise.all([
@@ -1294,6 +1512,16 @@
     }
     // checklistToday/checklistDraft/checklistColegas dependem da categoria escolhida — montados em
     // selectChecklistCategory(), já que nenhuma categoria está selecionada logo após o login.
+    // Bem-estar: histórico do PRÓPRIO colaborador (RLS já restringe a isso). Fora do fluxo principal e
+    // com try/catch isolado de propósito — se o schema novo ainda não tiver sido rodado (tabela ainda
+    // não existe), não pode derrubar o login inteiro (mesma armadilha já vista antes com
+    // overtime_rules); best-effort, cai pra "sem histórico" em qualquer erro.
+    state.wellbeing = { history: [] };
+    try{
+      const { data: wbRows } = await supabase.from("wellbeing_responses").select("period_start, score, created_at")
+        .eq("employee_id", state.employee.id).order("period_start", { ascending: false });
+      state.wellbeing.history = wbRows || [];
+    }catch(err){ /* schema novo ainda não rodado, ou sem conexão — mantém sem histórico */ }
   }
   // Versão enxuta de loadEmployeeData, só com o que pode mudar de fora (ação do gestor) enquanto o
   // colaborador está com o app aberto — usada pelo poll de 30s. shifts/holidays/checklist_categories/
@@ -1345,6 +1573,16 @@
     if(!employee){ state.view = "unlinked"; render(); return; }
     state.employee = employee;
     await loadEmployeeData();
+    // Inicializa (só se nunca tiver sido setado) o ciclo do check-in semanal obrigatório de Bem-estar —
+    // dá uma semana de folga antes do primeiro aparecer, em vez de forçar todo mundo assim que essa
+    // atualização for publicada. Idempotente: chamadas seguintes não fazem nada (a function só seta
+    // "where wellbeing_prompt_due_at is null").
+    if(!state.profile.wellbeing_prompt_due_at){
+      try{
+        await supabase.rpc("wellbeing_ping_prompt");
+        state.profile.wellbeing_prompt_due_at = new Date(Date.now() + 7*86400000).toISOString();
+      }catch(err){ /* sem essa function ainda (schema não rodado), ou sem conexão — segue sem o gate */ }
+    }
     state.view = "app"; state.tab = "escala";
     render();
     flushPendingQueue(); // pode ter sobrado fila de uma sessão offline anterior
@@ -1365,6 +1603,30 @@
       return;
     }
     if(state.view!=="app") return;
+
+    const wbGate = wellbeingGateStatus();
+    if(wbGate.due){
+      const snoozeBtn = $("#wbGateSnoozeBtn");
+      if(snoozeBtn) snoozeBtn.addEventListener("click", () => {
+        sessionStorage.setItem(wellbeingGateSessionKey(), "1");
+        render();
+      });
+      const ackBtn = $("#wbGateAckBtn");
+      if(ackBtn) ackBtn.addEventListener("click", async () => {
+        ackBtn.disabled = true; ackBtn.textContent = "Confirmando…";
+        try{
+          await supabase.rpc("wellbeing_acknowledge_prompt");
+          state.profile.wellbeing_prompt_due_at = new Date(Date.now() + 7*86400000).toISOString();
+          sessionStorage.removeItem(wellbeingGateSessionKey());
+          render();
+        }catch(err){
+          alert("Não consegui confirmar: "+err.message);
+          ackBtn.disabled = false; ackBtn.textContent = "Já vi, obrigado";
+        }
+      });
+      wireBemEstarBody();
+      return; // gate substitui o app inteiro (sem bottom nav) -- não tem mais nada pra ligar
+    }
 
     const installBtn = $("#installAppBtn");
     if(installBtn) installBtn.addEventListener("click", async () => {
@@ -1415,6 +1677,7 @@
       if(newFeriasBtn) newFeriasBtn.addEventListener("click", openFeriasRequestModal);
       localStorage.setItem("lastSeenFerias_"+state.employee.id, new Date().toISOString());
     }
+    if(state.tab==="bemestar") wireBemEstarBody();
     if(state.tab==="checklist"){
       document.querySelectorAll("[data-selectcategory]").forEach(el => el.addEventListener("click", () => selectChecklistCategory(el.dataset.selectcategory)));
       const backBtn = $("#backToCategoriesBtn");
