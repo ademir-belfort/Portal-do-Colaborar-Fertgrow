@@ -752,7 +752,7 @@
     const allSelected = visibleIds.length>0 && visibleIds.every(id=>checklistSelected.has(id));
     const addedIds = new Set(state.checklistColegas.map(c=>c.id));
     const q = colegaSearch.trim().toLowerCase();
-    const matches = q ? state.allEmployeesPublic.filter(e=>!addedIds.has(e.id) && e.name.toLowerCase().includes(q)).slice(0,8) : [];
+    const matches = q ? state.allEmployeesPublic.filter(e=>!addedIds.has(e.id) && e.name.toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).slice(0,8) : [];
     return `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <h2 class="section" style="margin:0">${esc(category?category.name:"")} — ${brDate(todayISO())}</h2>
