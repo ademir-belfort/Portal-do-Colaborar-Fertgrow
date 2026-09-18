@@ -183,6 +183,26 @@
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
+  // Mesmo helper de paginação do painel/app do gestor: um "select('*')" sem paginar volta truncado no
+  // limite do projeto (1000 linhas por padrão) sem erro nenhum visível -- aqui o risco é bem menor (só
+  // o attendance do PRÓPRIO colaborador, precisaria de anos de histórico diário pra passar de 1000),
+  // mas mantém a mesma defesa por consistência.
+  async function fetchAllRows(table, orderCol, filterFn){
+    const PAGE = 1000;
+    let allRows = [];
+    let from = 0;
+    while(true){
+      let q = supabase.from(table).select("*").order(orderCol);
+      if(filterFn) q = filterFn(q);
+      const { data, error } = await q.range(from, from+PAGE-1);
+      if(error) return { data: null, error };
+      if(!data || !data.length) break;
+      allRows = allRows.concat(data);
+      from += data.length;
+    }
+    return { data: allRows, error: null };
+  }
+
   // ---------------- helpers (mesma lógica do painel do gestor) ----------------
   const $ = (sel, root=document) => root.querySelector(sel);
   const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -225,9 +245,45 @@
     "Bentec": "data:image/png;base64,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",
     "FTR": "data:image/png;base64,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",
     "Vict Maia": "data:image/png;base64,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",
-    "Fertgrow": "data:image/png;base64,undefined",
   };
-  function companyLogoFor(companyName){ return COMPANY_LOGOS[companyName] || COMPANY_LOGOS.Fertgrow; }
+  // Sem logo cadastrada (nome não bate exatamente com a chave acima, ou sem empresa) -- antes caía num
+  // fallback "Fertgrow" que na verdade estava quebrado (literalmente a string
+  // "data:image/png;base64,undefined", virava ícone de imagem quebrada na tela). Gera um avatar simples
+  // com a inicial da empresa em vez de arriscar mostrar uma imagem quebrada.
+  function companyInitialAvatar(companyName){
+    const initial = String(companyName||"?").trim().charAt(0).toUpperCase() || "?";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72"><rect width="72" height="72" rx="12" fill="#0b6b33"/><text x="36" y="47" font-family="system-ui,sans-serif" font-size="32" font-weight="700" fill="#fff" text-anchor="middle">${initial}</text></svg>`;
+    return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
+  }
+  // Compara ignorando acento/maiúscula/espaço nas pontas -- uma logo cadastrada pra "Bentec" não devia
+  // deixar de aparecer só porque o nome da empresa no cadastro tem uma letra maiúscula/espaço diferente.
+  function companyLogoFor(companyName){
+    const norm = s => String(s||"").trim().toLowerCase();
+    const key = Object.keys(COMPANY_LOGOS).find(k => norm(k)===norm(companyName));
+    return key ? COMPANY_LOGOS[key] : companyInitialAvatar(companyName);
+  }
+  // ---------------- OS do PCM (só leitura -- espelha o conversor do painel admin) ----------------
+  function serviceOrderFromRow(r){
+    return {
+      id:r.id, osNumber:r.os_number, description:r.description||"", tag:r.tag||"", assetName:r.asset_name||"",
+      schedule:r.schedule||[], weekStart:r.week_start||"", setor:r.setor||"", status:r.status||"backlog",
+      scheduledDate:r.scheduled_date||"", completedAt:r.completed_at||"",
+    };
+  }
+  const PCM_DAY_OFFSET = { seg:0, ter:1, qua:2, qui:3, sex:4, sab:5, dom:6 };
+  function pcmScheduleSummary(weekStart, schedule){
+    if(!weekStart || !Array.isArray(schedule) || !schedule.length) return "—";
+    const seen = new Set(); const dates = [];
+    schedule.forEach(s => {
+      const offset = PCM_DAY_OFFSET[s.day];
+      if(offset==null) return;
+      const date = addDays(weekStart, offset);
+      if(seen.has(date)) return;
+      seen.add(date); dates.push(date);
+    });
+    dates.sort();
+    return dates.length ? dates.map(brDate).join(", ") : "—";
+  }
   const REQUEST_STATUS_LABEL = { pendente:"Pendente", aprovado:"Aprovado", rejeitado:"Rejeitado" };
   const CHECKLIST_STATUS_OPTIONS = ["✅","❌","⚠️","🚧","🚨"];
   // Quiz de Bem-estar: 5 perguntas de clima psicológico geral (inspiradas no WHO-5, instrumento validado
@@ -267,20 +323,26 @@
   }
   function scheduledDayInfo(employee, shift, holidays, attendanceList, dateISO){
     const holiday = findHoliday(holidays, dateISO);
-    const scheduled = !!shift && shiftWorksOnDate(shift, dateISO) && !holiday;
+    // Turno de escala contínua (works_on_holidays) não folga em feriado — só a EXIBIÇÃO do calendário
+    // muda aqui (o dia continua marcado como "escalado"); o cálculo de hora extra em
+    // attendanceEntryHoursBreakdown, mais abaixo, de propósito não é tocado por esse mesmo campo.
+    const scheduled = !!shift && shiftWorksOnDate(shift, dateISO) && (!holiday || !!shift.works_on_holidays);
     const attendance = (attendanceList||[]).find(a=>a.date===dateISO);
     return { shift, holiday, scheduled, attendance };
   }
   function attendanceDayStyle(employee, shift, holidays, attendanceList, dateISO){
     const info = scheduledDayInfo(employee, shift, holidays, attendanceList, dateISO);
     const status = info.attendance ? attendanceStatus(info.attendance) : null;
-    if(info.holiday) return { bg:"rgba(167,139,250,.22)", color:"#c4b5fd", label:info.holiday.name };
+    // Feriado só "toma conta" da cor/rótulo do dia pra turno que folga nele — pro turno que trabalha em
+    // feriado, o dia segue as mesmas regras de qualquer outro dia escalado (mostra se trabalhou, faltou
+    // etc. em vez de esconder isso atrás do nome do feriado).
+    if(info.holiday && !(shift && shift.works_on_holidays)) return { bg:"rgba(167,139,250,.22)", color:"#c4b5fd", label:info.holiday.name };
     if(status==="presente") return { bg:"rgba(52,211,153,.22)", color:"var(--emerald)", label:"Trabalhou" };
     if(status==="falta") return { bg:"rgba(251,113,133,.22)", color:"var(--rose)", label:"Faltou" };
     if(status==="ferias") return { bg:"rgba(34,211,238,.22)", color:"var(--cyan)", label:"Férias" };
     if(status==="folga") return { bg:"transparent", color:"var(--muted)", label:"Folga" };
     if(info.scheduled && dateISO < todayISO()) return { bg:"rgba(251,191,36,.22)", color:"var(--amber)", label:"Sem apontamento" };
-    if(info.scheduled) return { bg:"rgba(11,107,51,.15)", color:"var(--brand-light)", label:"Previsto" };
+    if(info.scheduled) return { bg:"rgba(11,107,51,.15)", color:"var(--brand-light)", label: info.holiday ? `Previsto (feriado: ${info.holiday.name})` : "Previsto" };
     return { bg:"transparent", color:"var(--muted)", label:"Folga" };
   }
   function attendanceEntryHoursBreakdown(shift, holidays, entry){
@@ -321,6 +383,7 @@
     holidays: [],
     attendance: [],
     myRequests: [],
+    myServiceOrders: [], // OS do PCM atribuídas a ele (só leitura -- finalizar/reprogramar é sempre o gestor)
     checklistToday: null,
     checklistTodayRows: [], // um por categoria já enviada hoje (ver checklist_categories)
     checklistCategories: [],
@@ -344,7 +407,31 @@
   let checklistSaveTimer = null;
   let colegaSearch = ""; // texto digitado na busca de colegas de turno (não persistido)
 
-  function render(){ $("#app").innerHTML = viewHTML(); wireView(); }
+  // Preserva foco + posição do cursor de um <input>/<textarea> entre re-renders -- sem isso, qualquer
+  // campo de busca (ex: buscar colega de turno) perde o foco no meio da digitação, porque o re-render
+  // troca o DOM inteiro debaixo do dedo de quem está digitando -- só dava pra escrever um caractere
+  // de cada vez. Conserta TODO campo desse tipo de uma vez só.
+  function render(){
+    const root = $("#app");
+    const active = document.activeElement;
+    let focusInfo = null;
+    if(active && root.contains(active) && active.id && (active.tagName==="INPUT" || active.tagName==="TEXTAREA")){
+      focusInfo = { id: active.id, selectionStart: null, selectionEnd: null };
+      try{ focusInfo.selectionStart = active.selectionStart; focusInfo.selectionEnd = active.selectionEnd; }
+      catch(err){ /* tipos como date/number não suportam seleção de texto -- ainda restaura o foco */ }
+    }
+    root.innerHTML = viewHTML();
+    wireView();
+    if(focusInfo){
+      const el = document.getElementById(focusInfo.id);
+      if(el && (el.tagName==="INPUT" || el.tagName==="TEXTAREA")){
+        el.focus();
+        if(focusInfo.selectionStart!=null){
+          try{ el.setSelectionRange(focusInfo.selectionStart, focusInfo.selectionEnd); }catch(err){ /* idem acima */ }
+        }
+      }
+    }
+  }
 
   function viewHTML(){
     if(state.view==="unconfigured") return unconfiguredHTML();
@@ -587,11 +674,12 @@
           </div>
         </div>
       </header>
-      <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():state.tab==="bemestar"?bemEstarHTML():checklistHTML()}</main>
+      <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():state.tab==="os"?minhasOSHTML():state.tab==="bemestar"?bemEstarHTML():checklistHTML()}</main>
       <nav class="bottom">
         <div class="n ${state.tab==='escala'?'active':''}" data-tab="escala"><span class="ic">📅</span>Escala${unseenEscala>0?`<span class="nav-badge">${unseenEscala}</span>`:""}</div>
         <div class="n ${state.tab==='ponto'?'active':''}" data-tab="ponto"><span class="ic">🕐</span>Ponto</div>
         <div class="n ${state.tab==='ferias'?'active':''}" data-tab="ferias"><span class="ic">🏖️</span>Férias${unseenFerias>0?`<span class="nav-badge">${unseenFerias}</span>`:""}</div>
+        <div class="n ${state.tab==='os'?'active':''}" data-tab="os"><span class="ic">🔧</span>OS${state.myServiceOrders.filter(o=>o.status==="distribuida").length?`<span class="nav-badge">${state.myServiceOrders.filter(o=>o.status==="distribuida").length}</span>`:""}</div>
         <div class="n ${state.tab==='checklist'?'active':''}" data-tab="checklist"><span class="ic">✅</span>Checklist</div>
         <div class="n ${state.tab==='bemestar'?'active':''}" data-tab="bemestar"><span class="ic">💚</span>Bem‑estar</div>
         <div class="n" data-tab="logout"><span class="ic">🚪</span>Sair</div>
@@ -1125,8 +1213,13 @@
     const shift = shiftForDate(dateISO);
     const info = scheduledDayInfo(state.employee, shift, state.holidays, state.attendance, dateISO);
     const status = info.attendance ? attendanceStatus(info.attendance) : null;
+    // Mesma regra de attendanceDayStyle: feriado só é a "situação final" pra quem folga nele — turno
+    // de escala contínua (works_on_holidays) segue as ramificações normais de status/escala abaixo, só
+    // com uma nota extra avisando que o dia também é feriado.
+    const holidayOverrides = info.holiday && !(shift && shift.works_on_holidays);
+    const holidayNote = (info.holiday && !holidayOverrides) ? `<div class="field"><label>Observação</label><div>🎉 Feriado (${esc(info.holiday.name)}) — seu turno trabalha em feriados</div></div>` : "";
     let body;
-    if(info.holiday){
+    if(holidayOverrides){
       body = `<div class="field"><label>Situação</label><div>🎉 Feriado — ${esc(info.holiday.name)}</div></div>`;
     } else if(status==="presente"){
       body = `
@@ -1136,12 +1229,14 @@
         <div class="field"><label>Horas registradas</label><div>${info.attendance.hours}h</div></div>
         ${info.attendance.atraso ? `<div class="field"><label>Observação</label><div>⏰ Chegou atrasado</div></div>` : ""}
         ${info.attendance.justification ? `<div class="field"><label>Anotação</label><div style="white-space:pre-wrap">${esc(info.attendance.justification)}</div></div>` : ""}
+        ${holidayNote}
       `;
     } else if(status==="falta"){
       body = `
         <div class="field"><label>Situação</label><div>❌ Faltou</div></div>
         ${info.attendance.atestado ? `<div class="field"><label>Atestado</label><div>Sim</div></div>` : ""}
         ${info.attendance.justification ? `<div class="field"><label>Motivo</label><div style="white-space:pre-wrap">${esc(info.attendance.justification)}</div></div>` : ""}
+        ${holidayNote}
       `;
     } else if(status==="ferias"){
       body = `<div class="field"><label>Situação</label><div>🏖️ Férias</div></div>`;
@@ -1152,9 +1247,10 @@
         <div class="field"><label>Situação</label><div>📅 Previsto trabalhar</div></div>
         <div class="field"><label>Turno</label><div>${esc(shift.name)}</div></div>
         <div class="field"><label>Horário previsto</label><div>${esc(shift.start_time)} às ${esc(shift.end_time)}</div></div>
+        ${holidayNote}
       `;
     } else if(info.scheduled){
-      body = `<div class="field"><label>Situação</label><div>⚠️ Deveria ter trabalhado, mas ainda não tem apontamento registrado.</div></div>`;
+      body = `<div class="field"><label>Situação</label><div>⚠️ Deveria ter trabalhado, mas ainda não tem apontamento registrado.</div></div>${holidayNote}`;
     } else {
       body = `<div class="field"><label>Situação</label><div>😴 Folga</div></div>`;
     }
@@ -1355,6 +1451,7 @@
         <div class="req-row" style="border-bottom:none;padding-top:0">
           <div class="d">${brDate(ativa.date_start)} a ${brDate(ativa.date_end)}</div>
           ${ativa.reason ? `<div class="sub">${esc(ativa.reason)}</div>` : ""}
+          ${ativa.admin_registered ? `<div class="sub">🗓️ Cadastrado pelo gestor</div>` : ""}
           <span class="badge ${ativa.status}" style="margin-top:6px;display:inline-block">${REQUEST_STATUS_LABEL[ativa.status]}</span>
         </div>
         <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0">Você já tem um período ${ativa.status==="pendente"?"pendente":"aprovado"} — não dá pra pedir outro enquanto esse não passar.</p>
@@ -1370,7 +1467,86 @@
           <div class="req-row">
             <div class="d">${brDate(r.date_start)} a ${brDate(r.date_end)}</div>
             ${r.reason ? `<div class="sub">${esc(r.reason)}</div>` : ""}
+            ${r.admin_registered ? `<div class="sub">🗓️ Cadastrado pelo gestor</div>` : ""}
             <span class="badge ${r.status}" style="margin-top:6px;display:inline-block">${REQUEST_STATUS_LABEL[r.status]}</span>
+          </div>`).join("")}
+      </div>` : ""}
+    `;
+  }
+
+  // ---------------- Minhas OS (Ordens de Serviço do PCM atribuídas a ele) — só leitura, quem
+  // finaliza/reprograma é sempre o gestor (no painel ou no app dele) ----------------
+  // OS que o colaborador marcou como "feita" por conta própria -- registro pessoal (não muda
+  // service_orders.status, isso continua só admin) que fica salvo dentro do checklist de turno do
+  // dia, pra o gestor ver ao revisar o histórico de checklist. Pedido explícito do usuário.
+  function myCompletedOSIds(){
+    return new Set(state.checklistTodayRows.flatMap(r=>(r.completed_service_orders||[]).map(x=>x.id)));
+  }
+  function bestChecklistCategoryIdForOS(){
+    const setor = (state.employee.setor||"").trim().toLowerCase();
+    if(setor){
+      const match = state.checklistCategories.find(c => {
+        const name = c.name.toLowerCase();
+        return name.includes(setor) || setor.includes(name.replace(/^checklist\s*/,"").trim());
+      });
+      if(match) return match.id;
+    }
+    return state.checklistCategory || (state.checklistCategories[0] && state.checklistCategories[0].id) || null;
+  }
+  async function markServiceOrderDone(os){
+    const categoryId = bestChecklistCategoryIdForOS();
+    if(!categoryId){ alert("Nenhum checklist cadastrado ainda pra registrar isso."); return; }
+    const today = todayISO();
+    const existing = state.checklistTodayRows.find(r=>r.category_id===categoryId) || { employee_id: state.employee.id, date: today, category_id: categoryId, items: [], colegas: [], completed_service_orders: [] };
+    if((existing.completed_service_orders||[]).some(x=>x.id===os.id)) return;
+    const completed_service_orders = [...(existing.completed_service_orders||[]), { id: os.id, osNumber: os.osNumber, description: os.description }];
+    const row = { employee_id: state.employee.id, date: today, category_id: categoryId, completed_service_orders };
+    // Aplica local na hora, mesma lógica de saveChecklistDraft -- o colaborador não fica esperando a rede.
+    state.checklistTodayRows = [...state.checklistTodayRows.filter(r=>r.category_id!==categoryId), { ...existing, ...row }];
+    render();
+    try{
+      const { error } = await supabase.from("daily_checklists").upsert(row, {onConflict:"employee_id,date,category_id"});
+      if(error) throw error;
+    }catch(err){
+      enqueuePendingSync("checklist", row);
+    }
+  }
+  function minhasOSHTML(){
+    const today = todayISO();
+    const pendentes = state.myServiceOrders.filter(o=>o.status==="distribuida").sort((a,b)=>(a.scheduledDate||"9999").localeCompare(b.scheduledDate||"9999"));
+    const realizadas = state.myServiceOrders.filter(o=>o.status==="realizada").sort((a,b)=>(b.completedAt||"").localeCompare(a.completedAt||""));
+    const completedIds = myCompletedOSIds();
+    return `
+      <h2 class="section">Minhas OS</h2>
+      <p style="font-size:11.5px;color:var(--muted);margin:-4px 0 12px">São as OS do seu setor — qualquer colega presente no dia também vê essa lista.</p>
+      ${!pendentes.length ? `
+      <div class="card">
+        <p style="margin-top:0;font-size:13px;color:var(--muted)">Nenhuma OS pendente do seu setor no momento.</p>
+      </div>` : `
+      <div class="card" style="padding:4px 16px">
+        ${pendentes.map(o => {
+          const atrasada = o.scheduledDate && o.scheduledDate<today;
+          const done = completedIds.has(o.id);
+          return `
+          <div class="req-row" style="cursor:default">
+            <div class="d">OS ${o.osNumber} — ${esc(o.description)||"—"}</div>
+            <div class="sub">${esc(o.tag)||"—"}${o.assetName?` · ${esc(o.assetName)}`:""}</div>
+            ${o.setor ? `<div class="sub">${esc(o.setor)}</div>` : ""}
+            <span class="badge ${atrasada?'rejeitado':'pendente'}" style="margin-top:6px;display:inline-block">${o.scheduledDate ? (atrasada?"⚠️ Atrasada — ":"")+brDate(o.scheduledDate) : "Sem data definida"}</span>
+            ${done
+              ? `<div style="margin-top:8px"><span class="badge aprovado">✅ Você marcou como feita</span></div>`
+              : `<button class="btn ghost small" data-marcarosfeita="${o.id}" style="width:auto;margin-top:8px">✅ Marcar como feita</button>`}
+          </div>`;
+        }).join("")}
+      </div>`}
+      ${realizadas.length ? `
+      <h2 class="section" style="margin-top:20px">Histórico</h2>
+      <div class="card" style="padding:4px 16px">
+        ${realizadas.slice(0,20).map(o => `
+          <div class="req-row">
+            <div class="d">OS ${o.osNumber} — ${esc(o.description)||"—"}</div>
+            <div class="sub">${esc(o.tag)||"—"}${o.assetName?` · ${esc(o.assetName)}`:""}</div>
+            <span class="badge aprovado" style="margin-top:6px;display:inline-block">✅ Realizada${o.completedAt?` em ${brDate(o.completedAt.slice(0,10))}`:""}</span>
           </div>`).join("")}
       </div>` : ""}
     `;
@@ -1546,7 +1722,7 @@
     const [{data: shifts}, {data: holidays}, {data: attendance}, {data: myRequests}, {data: checklistCategories}, {data: checklistAreas}, {data: checklistEquipment}, {data: allEmployeesPublic}, {data: checklistHistory}, {data: checklistTodayRows}, {data: notifications}, {data: dssToday}, {data: shiftHistory}, {data: companies}] = await Promise.all([
       supabase.from("shifts").select("*"),
       supabase.from("holidays").select("*"),
-      supabase.from("attendance").select("*").eq("employee_id", state.employee.id),
+      fetchAllRows("attendance", "id", q => q.eq("employee_id", state.employee.id)),
       supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
       supabase.from("checklist_categories").select("*").order("order"),
       supabase.from("checklist_areas").select("*").order("order"),
@@ -1577,6 +1753,16 @@
     state.dssToday = dssToday || null;
     state.shiftHistory = (shiftHistory || []).map(r => ({ shiftId: r.shift_id, effectiveFrom: r.effective_from }));
     state.shift = state.shifts.find(s=>s.id===state.employee.shift_id) || null;
+    // OS do PCM do MESMO SETOR dele -- não é mais de uma pessoa só, é do grupo inteiro (qualquer
+    // colaborador do setor recebe). Fora do Promise.all de propósito: tabela nova, se o schema ainda
+    // não tiver sido atualizado no Supabase isso não pode derrubar o carregamento do resto do app.
+    try{
+      const { data: myOS, error: myOSErr } = state.employee.setor
+        ? await supabase.from("service_orders").select("*").eq("setor", state.employee.setor)
+        : { data: [], error: null };
+      if(myOSErr) throw myOSErr;
+      state.myServiceOrders = (myOS||[]).map(serviceOrderFromRow);
+    }catch(err){ state.myServiceOrders = state.myServiceOrders || []; }
     if(state.employee.company_id){
       const { data: company } = await supabase.from("companies").select("*").eq("id", state.employee.company_id).maybeSingle();
       state.company = company || null;
@@ -1603,7 +1789,7 @@
       supabase.from("time_off_requests").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
       supabase.from("notifications").select("*").eq("employee_id", state.employee.id).order("created_at",{ascending:false}),
       supabase.from("dss_topics").select("*").eq("date", todayISO()).maybeSingle(),
-      supabase.from("attendance").select("*").eq("employee_id", state.employee.id),
+      fetchAllRows("attendance", "id", q => q.eq("employee_id", state.employee.id)),
       supabase.from("employee_shift_history").select("*").eq("employee_id", state.employee.id).order("effective_from"),
     ]);
     state.myRequests = myRequests || [];
@@ -1615,6 +1801,13 @@
     // cabeçalho) fica intencionalmente parado até o próximo login, já que shiftForDate() (usada no
     // calendário/apontamentos) resolve pelo histórico, não por state.shift.
     state.shiftHistory = (shiftHistory || []).map(r => ({ shiftId: r.shift_id, effectiveFrom: r.effective_from }));
+    try{
+      const { data: myOS, error: myOSErr } = state.employee.setor
+        ? await supabase.from("service_orders").select("*").eq("setor", state.employee.setor)
+        : { data: [], error: null };
+      if(myOSErr) throw myOSErr;
+      state.myServiceOrders = (myOS||[]).map(serviceOrderFromRow);
+    }catch(err){ /* schema novo ainda não rodado, ou sem conexão — mantém a lista anterior */ }
   }
   // Escolhe a categoria de checklist ativa nesta sessão e monta o rascunho a partir do envio de
   // hoje PRA ESSA categoria, se já existir (cada categoria tem sua própria linha em daily_checklists).
@@ -1753,6 +1946,12 @@
       const newFeriasBtn = $("#newFeriasBtn");
       if(newFeriasBtn) newFeriasBtn.addEventListener("click", openFeriasRequestModal);
       localStorage.setItem("lastSeenFerias_"+state.employee.id, new Date().toISOString());
+    }
+    if(state.tab==="os"){
+      document.querySelectorAll("[data-marcarosfeita]").forEach(el => el.addEventListener("click", () => {
+        const os = state.myServiceOrders.find(o=>o.id===el.dataset.marcarosfeita);
+        if(os) markServiceOrderDone(os);
+      }));
     }
     if(state.tab==="bemestar") wireBemEstarBody();
     if(state.tab==="checklist"){
