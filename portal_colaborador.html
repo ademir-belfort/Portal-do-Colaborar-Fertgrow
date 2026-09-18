@@ -184,6 +184,27 @@
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
+  // Mesma proteção do painel desktop/app do gestor: mantém o token de sessão sempre renovado, em vez de
+  // confiar só no timer interno do supabase-js (que pode atrasar com o app muito tempo em segundo plano
+  // no celular). Já causou "permission denied" numa sessão longa do painel -- token mesmo vencido, não
+  // era bug de RLS/GRANT. Renova sempre que o app volta a ficar visível, e periodicamente.
+  async function ensureFreshSession(){
+    if(!configured || !supabase) return;
+    try{
+      const { data, error } = await supabase.auth.getSession();
+      if(error || !data || !data.session) return;
+      const expiresAt = data.session.expires_at;
+      const now = Math.floor(Date.now()/1000);
+      if(expiresAt && (expiresAt - now) < 300) await supabase.auth.refreshSession();
+    }catch(err){ /* melhor esforço -- se falhar aqui, a próxima gravação real ainda reporta o erro visivelmente */ }
+  }
+  if(configured && supabase){
+    document.addEventListener("visibilitychange", () => {
+      if(document.visibilityState === "visible") ensureFreshSession();
+    });
+    setInterval(ensureFreshSession, 4*60*1000);
+  }
+
   // Mesmo helper de paginação do painel/app do gestor: um "select('*')" sem paginar volta truncado no
   // limite do projeto (1000 linhas por padrão) sem erro nenhum visível -- aqui o risco é bem menor (só
   // o attendance do PRÓPRIO colaborador, precisaria de anos de histórico diário pra passar de 1000),
