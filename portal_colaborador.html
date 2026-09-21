@@ -10,6 +10,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="MANUTENÇÃO" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- Manrope: só usada pelo banner diário (aniversário/ano de empresa/férias), desenhado num <canvas>. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
 <style>
   :root{
     --bg:#070f0a; --surface:#111f17; --surface2:#17281e; --border:rgba(178,214,180,.12);
@@ -419,6 +422,7 @@
     authInfo: "",
     session: null,
     profile: null,
+    dailyBanners: null, dailyBannerIndex: 0,
     employee: null,
     company: null,
     shift: null,
@@ -482,6 +486,7 @@
     if(state.view==="auth") return authHTML();
     if(state.view==="unlinked") return unlinkedHTML();
     if(state.view==="app"){
+      if(state.dailyBanners && state.dailyBannerIndex < state.dailyBanners.length) return dailyBannerHTML();
       const gate = wellbeingGateStatus();
       if(gate.due) return wellbeingGateHTML(gate.forced);
     }
@@ -510,6 +515,11 @@
         </div>
         ${state.authError ? `<div class="msg err">${esc(state.authError)}</div>` : ""}
         ${state.authInfo ? `<div class="msg ok">${esc(state.authInfo)}</div>` : ""}
+        ${!isSignup && !isStandaloneApp() ? `
+        <div class="card" style="background:var(--surface2);margin-bottom:10px">
+          <p style="margin:0;font-size:12.5px;color:var(--muted)">📲 Caindo aqui toda vez mesmo sem sair? Instale o app na tela de início do celular — assim o login fica salvo e só pede senha de novo se você tocar em "Sair".</p>
+          ${installButtonHTML() ? `<div style="margin-top:8px">${installButtonHTML()}</div>` : ""}
+        </div>` : ""}
         <div class="card">
           ${isSignup ? `<p style="margin-top:0;font-size:12.5px;color:var(--muted)">Use o mesmo e-mail que o gestor cadastrou na sua ficha de funcionário — é assim que o sistema sabe quem é você.</p>` : ""}
           <div class="field"><label>E-mail</label><input type="email" class="input" id="auth_email" autocomplete="email" /></div>
@@ -1863,6 +1873,270 @@
     render();
   }
 
+  // ---------------- Banner diário (aniversário / ano de empresa / férias) -- mesmo gerador de imagem
+  // do painel desktop e do app do gestor (código idêntico, só que aqui é mostrado sozinho, em tela
+  // cheia, ao entrar no app, em vez de gerado manualmente). Um card na vez, com X pra fechar; se tiver
+  // mais de um evento hoje (ex: 3 aniversariantes), o X do primeiro revela o próximo, em sequência.
+  const BANNER_MESES = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  function bnFormatLong(iso){
+    if(!iso) return "";
+    const [y,m,d] = iso.split("-").map(Number);
+    return `${d} de ${BANNER_MESES[m-1]}`;
+  }
+  function bnShortName(name){
+    const parts = (name||"").trim().split(/\s+/).filter(Boolean);
+    if(parts.length<=1) return parts[0]||"";
+    return parts[0] + " " + parts[parts.length-1];
+  }
+  function bnFitFont(ctx, text, maxWidth, maxSize, minSize, weight, family){
+    let size = maxSize;
+    ctx.font = `${weight} ${size}px "${family}"`;
+    while(size > minSize && ctx.measureText(text).width > maxWidth){
+      size -= 2;
+      ctx.font = `${weight} ${size}px "${family}"`;
+    }
+    return size;
+  }
+  function bnRoundRectPath(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+  function bnWatermarkArcs(ctx, W, H, color){
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 3;
+    [[W*0.18,H*0.0,520],[W*0.9,H*0.16,440],[W*0.02,H*0.86,480],[W*0.98,H*1.02,520]].forEach(([cx,cy,r])=>{
+      ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+    });
+    ctx.restore();
+  }
+  function bnConfetti(ctx, pieces, color){
+    pieces.forEach(([x,y,len,ang])=>{
+      ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
+      ctx.fillStyle = color; ctx.fillRect(-len/2,-3,len,6);
+      ctx.restore();
+    });
+  }
+  function bnBalloon(ctx, cx, cy, w, h, color, highlight){
+    const grad = ctx.createRadialGradient(cx-w*0.26,cy-h*0.3,w*0.05,cx,cy,w*0.78);
+    grad.addColorStop(0,highlight); grad.addColorStop(1,color);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.ellipse(cx,cy,w/2,h/2,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx-7,cy+h/2-4); ctx.lineTo(cx+7,cy+h/2-4); ctx.lineTo(cx,cy+h/2+14);
+    ctx.closePath(); ctx.fill();
+  }
+  function bnBalloonCluster(ctx, cx, cy, green, dir){
+    bnBalloon(ctx, cx-40*dir, cy+10, 130, 160, green, "#4fb876");
+    bnBalloon(ctx, cx+55*dir, cy-30, 110, 140, "#f7f6f1", "#ffffff");
+    bnBalloon(ctx, cx+10*dir, cy+70, 100, 128, green, "#4fb876");
+  }
+  function bnWrapCentered(ctx, text, cx, y, maxWidth, lineHeight){
+    const words = text.split(" ");
+    let line = "", lines = [];
+    words.forEach(w=>{
+      const test = line ? line+" "+w : w;
+      if(ctx.measureText(test).width > maxWidth && line){ lines.push(line); line = w; }
+      else line = test;
+    });
+    if(line) lines.push(line);
+    const startY = y - (lines.length-1)*lineHeight/2;
+    lines.forEach((l,i)=>ctx.fillText(l, cx, startY + i*lineHeight));
+  }
+  function bnWordmark(ctx, cx, y, logoImg, color){
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    if(logoImg){
+      const maxH=84, maxW=420;
+      let lw=logoImg.width, lh=logoImg.height;
+      const scale = Math.min(maxH/lh, maxW/lw, 1);
+      lw*=scale; lh*=scale;
+      ctx.drawImage(logoImg, cx-lw/2, y-lh, lw, lh);
+    } else {
+      ctx.fillStyle = color;
+      ctx.font = `800 34px "Manrope"`;
+      ctx.fillText("FERTGROW", cx, y);
+    }
+  }
+  const BN_GREEN = "#0B6B33", BN_GREEN_LIGHT = "#AFD676", BN_DARK = "#17291d", BN_MUTED = "rgba(23,41,29,0.55)", BN_BG = "#f5f4ef";
+  function drawAniversarioBanner(ctx, W, H, data, logoImg){
+    ctx.fillStyle = BN_BG; ctx.fillRect(0,0,W,H);
+    bnWatermarkArcs(ctx, W, H, "rgba(23,41,29,0.06)");
+    bnConfetti(ctx, [[130,70,26,0.3],[900,50,22,-0.5],[820,150,18,0.9],[80,190,16,-0.2],[960,230,14,0.6],[200,40,18,-0.7]], "#cda029");
+    bnBalloonCluster(ctx, W*0.04, H*0.94, BN_GREEN, 1);
+    bnBalloonCluster(ctx, W*0.98, H*0.9, BN_GREEN, -1);
+
+    bnWordmark(ctx, W/2, 190, logoImg, BN_DARK);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = BN_GREEN;
+    ctx.font = `800 66px "Manrope"`;
+    ctx.fillText("Feliz aniversário!", W/2, 330);
+
+    const nome = (bnShortName(data.nome)||"Nome do colaborador").toUpperCase();
+    const nameSize = bnFitFont(ctx, nome, 880, 52, 32, 800, "Manrope");
+    ctx.fillStyle = BN_DARK; ctx.font = `800 ${nameSize}px "Manrope"`;
+    ctx.fillText(nome, W/2, 410);
+
+    if(data.cargo){
+      ctx.save(); ctx.fillStyle = BN_MUTED; ctx.font = `600 22px "Manrope"`; ctx.letterSpacing = "2px";
+      ctx.fillText(data.cargo.toUpperCase(), W/2, 448); ctx.restore();
+    }
+
+    ctx.fillStyle = BN_DARK; ctx.font = `500 32px "Manrope"`;
+    bnWrapCentered(ctx, "Que o novo ciclo venha acompanhado de saúde e alegrias!", W/2, 530, 800, 42);
+
+    if(data.data1){
+      ctx.fillStyle = BN_MUTED; ctx.font = `600 22px "Manrope"`;
+      ctx.fillText(bnFormatLong(data.data1), W/2, 630);
+    }
+
+    ctx.fillStyle = BN_MUTED; ctx.font = `500 18px "Manrope"`;
+    ctx.fillText("Equipe Fertgrow", W/2, H-70);
+  }
+  function drawAnoEmpresaBanner(ctx, W, H, data, logoImg){
+    ctx.fillStyle = BN_BG; ctx.fillRect(0,0,W,H);
+    bnWatermarkArcs(ctx, W, H, "rgba(23,41,29,0.06)");
+    bnBalloonCluster(ctx, W*0.02, H*0.1, BN_GREEN, 1);
+    bnBalloonCluster(ctx, W*0.99, H*0.92, BN_GREEN, -1);
+
+    bnWordmark(ctx, W/2, 140, logoImg, BN_DARK);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = BN_GREEN;
+    ctx.font = `800 68px "Manrope"`;
+    ctx.fillText("Parabéns!", W/2, 400);
+
+    const nome = (bnShortName(data.nome)||"Nome do colaborador").toUpperCase();
+    const nameSize = bnFitFont(ctx, nome, 880, 46, 28, 800, "Manrope");
+    ctx.fillStyle = BN_DARK; ctx.font = `800 ${nameSize}px "Manrope"`;
+    ctx.fillText(nome, W/2, 460);
+
+    if(data.cargo){
+      ctx.save(); ctx.fillStyle = BN_MUTED; ctx.font = `600 20px "Manrope"`; ctx.letterSpacing = "2px";
+      ctx.fillText(data.cargo.toUpperCase(), W/2, 496); ctx.restore();
+    }
+
+    const anos = data.anos || "1";
+    ctx.fillStyle = BN_GREEN; ctx.font = `800 170px "Manrope"`;
+    ctx.fillText(String(anos), W/2, 700);
+
+    const label = Number(anos)===1 ? "1 ANO DE EMPRESA" : `${anos} ANOS DE EMPRESA`;
+    ctx.font = `800 34px "Manrope"`;
+    const labelW = ctx.measureText(label).width;
+    ctx.fillStyle = BN_GREEN_LIGHT;
+    bnRoundRectPath(ctx, W/2-labelW/2-18, 730, labelW+36, 52, 8); ctx.fill();
+    ctx.fillStyle = BN_GREEN;
+    ctx.fillText(label, W/2, 766);
+
+    ctx.fillStyle = BN_DARK; ctx.font = `500 30px "Manrope"`;
+    bnWrapCentered(ctx, "Mais um ano compartilhando desafios e resultados.", W/2, 860, 780, 40);
+
+    ctx.fillStyle = BN_MUTED; ctx.font = `500 18px "Manrope"`;
+    ctx.fillText("Equipe Fertgrow", W/2, H-70);
+  }
+  function drawFeriasBanner(ctx, W, H, data, logoImg){
+    ctx.fillStyle = BN_BG; ctx.fillRect(0,0,W,H);
+    bnWatermarkArcs(ctx, W, H, "rgba(23,41,29,0.05)");
+
+    bnWordmark(ctx, W/2, 150, logoImg, BN_DARK);
+
+    ctx.textAlign = "center";
+    ctx.save(); ctx.fillStyle = BN_GREEN; ctx.font = `800 24px "Manrope"`; ctx.letterSpacing = "3px";
+    ctx.fillText("AVISO DE FÉRIAS", W/2, 210); ctx.restore();
+
+    const nome = (bnShortName(data.nome)||"Nome do colaborador").toUpperCase();
+    const nameSize = bnFitFont(ctx, nome, 880, 58, 34, 800, "Manrope");
+    ctx.fillStyle = BN_DARK; ctx.font = `800 ${nameSize}px "Manrope"`;
+    ctx.fillText(nome, W/2, 610);
+
+    if(data.cargo){
+      ctx.save(); ctx.fillStyle = BN_MUTED; ctx.font = `600 24px "Manrope"`; ctx.letterSpacing = "2px";
+      ctx.fillText(data.cargo.toUpperCase(), W/2, 655); ctx.restore();
+    }
+
+    ctx.strokeStyle = "rgba(23,41,29,0.18)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(W/2-90,710); ctx.lineTo(W/2+90,710); ctx.stroke();
+
+    const col1X = W/2-200, col2X = W/2+200;
+    ctx.save(); ctx.fillStyle = BN_MUTED; ctx.font = `700 18px "Manrope"`; ctx.letterSpacing = "2px";
+    ctx.fillText("SAÍDA", col1X, 780);
+    ctx.fillText("RETORNO", col2X, 780);
+    ctx.restore();
+    ctx.fillStyle = BN_DARK; ctx.font = `700 42px "Manrope"`;
+    ctx.fillText(bnFormatLong(data.data1)||"—", col1X, 835);
+    ctx.fillStyle = BN_GREEN; ctx.font = `700 42px "Manrope"`;
+    ctx.fillText(bnFormatLong(data.data2)||"—", col2X, 835);
+
+    ctx.strokeStyle = "rgba(23,41,29,0.15)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(W/2,750); ctx.lineTo(W/2,845); ctx.stroke();
+
+    ctx.fillStyle = BN_MUTED; ctx.font = `500 18px "Manrope"`;
+    ctx.fillText("Equipe Fertgrow", W/2, H-70);
+  }
+  // Guarda em localStorage quais eventos de hoje já foram fechados (por tipo+funcionário), pra não
+  // mostrar o mesmo banner de novo a cada vez que o colaborador reabre o app no mesmo dia -- por
+  // dispositivo, não sincroniza entre aparelhos (aceitável pra um aviso do dia, sem gravidade nenhuma
+  // se aparecer de novo num celular diferente).
+  function bnDismissedKey(){ return "dismissedBanners_" + todayISO(); }
+  function bnIsDismissed(ev){
+    try{
+      const list = JSON.parse(localStorage.getItem(bnDismissedKey()) || "[]");
+      return list.includes(ev.kind + ":" + ev.employee_id);
+    }catch(err){ return false; }
+  }
+  function bnMarkDismissed(ev){
+    try{
+      const list = JSON.parse(localStorage.getItem(bnDismissedKey()) || "[]");
+      list.push(ev.kind + ":" + ev.employee_id);
+      localStorage.setItem(bnDismissedKey(), JSON.stringify(list));
+    }catch(err){ /* sem storage disponível (modo privado etc.) -- só reaparece na próxima abertura */ }
+  }
+  async function loadDailyBanners(){
+    try{
+      const { data, error } = await supabase.rpc("today_banner_events");
+      if(error || !data) return;
+      const pending = data.filter(ev => !bnIsDismissed(ev));
+      if(pending.length){ state.dailyBanners = pending; state.dailyBannerIndex = 0; }
+    }catch(err){ /* schema novo ainda não rodado, ou sem conexão -- só não mostra o banner dessa vez */ }
+  }
+  function dailyBannerHTML(){
+    return `
+      <div style="position:fixed;inset:0;z-index:999;background:rgba(4,10,6,.92);display:flex;align-items:center;justify-content:center;padding:20px">
+        <div style="position:relative;max-width:420px;width:100%">
+          <button id="dailyBannerClose" type="button" aria-label="Fechar" style="position:absolute;top:-16px;right:-16px;width:38px;height:38px;border-radius:50%;background:#fff;color:#17291d;border:0;font-size:18px;font-weight:800;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.4)">✕</button>
+          <canvas id="dailyBannerCanvas" width="1080" height="1350" style="width:100%;height:auto;border-radius:18px;box-shadow:0 16px 40px rgba(0,0,0,.5);display:block"></canvas>
+        </div>
+      </div>
+    `;
+  }
+  function drawDailyBanner(){
+    const canvas = $("#dailyBannerCanvas"); if(!canvas) return;
+    const ev = (state.dailyBanners||[])[state.dailyBannerIndex];
+    if(!ev) return;
+    const ctx = canvas.getContext("2d");
+    const data = { nome: ev.name, cargo: ev.cargo||"", data1: ev.kind==="aniversario" ? todayISO() : ev.date_start, data2: ev.date_end, anos: ev.years };
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    if(ev.kind==="aniversario") drawAniversarioBanner(ctx, canvas.width, canvas.height, data, null);
+    else if(ev.kind==="ano_empresa") drawAnoEmpresaBanner(ctx, canvas.width, canvas.height, data, null);
+    else drawFeriasBanner(ctx, canvas.width, canvas.height, data, null);
+  }
+  function wireDailyBanner(){
+    drawDailyBanner();
+    if(document.fonts && document.fonts.ready) document.fonts.ready.then(drawDailyBanner);
+    const closeBtn = $("#dailyBannerClose");
+    if(closeBtn) closeBtn.addEventListener("click", () => {
+      const ev = (state.dailyBanners||[])[state.dailyBannerIndex];
+      if(ev) bnMarkDismissed(ev);
+      state.dailyBannerIndex++;
+      render();
+    });
+  }
+
   async function bootstrap(){
     if(!configured){ state.view = "unconfigured"; render(); return; }
     const { data: { session } } = await supabase.auth.getSession();
@@ -1890,6 +2164,7 @@
         state.profile.wellbeing_prompt_due_at = new Date(Date.now() + 7*86400000).toISOString();
       }catch(err){ /* sem essa function ainda (schema não rodado), ou sem conexão — segue sem o gate */ }
     }
+    await loadDailyBanners();
     state.view = "app"; state.tab = "escala";
     render();
     flushPendingQueue(); // pode ter sobrado fila de uma sessão offline anterior
@@ -1904,11 +2179,28 @@
 
   // ---------------- wiring ----------------
   function wireView(){
+    if(state.view==="app" && state.dailyBanners && state.dailyBannerIndex < state.dailyBanners.length){
+      wireDailyBanner();
+      return;
+    }
     if(state.view==="auth"){
       document.querySelectorAll("[data-authtab]").forEach(el => el.addEventListener("click", () => {
         state.authMode = el.dataset.authtab; state.authError=""; state.authInfo=""; render();
       }));
       $("#auth_submit").addEventListener("click", onAuthSubmit);
+      const authInstallBtn = $("#installAppBtn");
+      if(authInstallBtn) authInstallBtn.addEventListener("click", async () => {
+        if(!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        if(choice.outcome==="accepted") installDismissed = true;
+        render();
+      });
+      const authInstallHint = $("#installAppHint");
+      if(authInstallHint) authInstallHint.addEventListener("click", () => {
+        alert('Pra instalar no iPhone: toque no ícone de Compartilhar (o quadrado com a seta pra cima) e escolha "Adicionar à Tela de Início".');
+      });
       return;
     }
     if(state.view==="unlinked"){
