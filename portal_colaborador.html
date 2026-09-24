@@ -2220,7 +2220,7 @@
       img.src = url;
     });
   }
-  async function prCompressImage(file, maxDim=1600, quality=0.82){
+  async function prCompressImageInner(file, maxDim, quality){
     const bitmap = await prLoadBitmap(file);
     let width = bitmap.width, height = bitmap.height;
     if(width > maxDim || height > maxDim){
@@ -2234,6 +2234,35 @@
     ctx.drawImage(bitmap, 0, 0, width, height);
     if(bitmap.close) bitmap.close();
     return new Promise(resolve => canvas.toBlob(blob => resolve({ blob, width, height }), "image/jpeg", quality));
+  }
+  function prReadImageDims(file){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => { URL.revokeObjectURL(url); resolve({ width: img.naturalWidth||1600, height: img.naturalHeight||1200 }); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
+  }
+  // Em alguns celulares (foto de câmera muito grande, navegador mais antigo), createImageBitmap/canvas
+  // trava sem nunca dar erro nem terminar -- sem um limite de tempo, "Adicionar fotos" ficava preso em
+  // "Processando..." pra sempre (bug real reportado no app do colaborador). Se travar, usa a foto
+  // ORIGINAL sem reduzir (mais pesada no PDF, mas pelo menos entra) em vez de travar o app.
+  async function prCompressImage(file, maxDim=1600, quality=0.82){
+    try{
+      return await Promise.race([
+        prCompressImageInner(file, maxDim, quality),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000)),
+      ]);
+    }catch(err){
+      console.error("Compressão da foto travou/falhou, usando original sem reduzir:", err);
+      try{
+        const dims = await prReadImageDims(file);
+        return { blob: file, width: dims.width, height: dims.height };
+      }catch(err2){
+        return { blob: file, width: 1600, height: 1200 };
+      }
+    }
   }
   function prBlobToDataURL(blob){
     return new Promise((resolve, reject) => {
