@@ -41,6 +41,9 @@
   header.top .who{font-size:12.5px;color:var(--muted);margin-top:3px;}
   main{flex:1;padding:18px;}
   .card{background:linear-gradient(180deg, rgba(255,255,255,.03), transparent 40%), var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;box-shadow:var(--shadow-card);}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .kpi .label{font-size:11px;color:var(--muted);}
+  .kpi .value{font-size:22px;font-weight:700;margin-top:4px;}
   .field{margin-bottom:14px;}
   .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;}
   .input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:12px 14px;border-radius:var(--r-sm);font-size:15px;transition:border-color .15s var(--ease-fluid), box-shadow .15s var(--ease-fluid);}
@@ -325,7 +328,7 @@
     return {
       id:r.id, osNumber:r.os_number, description:r.description||"", tag:r.tag||"", assetName:r.asset_name||"",
       schedule:r.schedule||[], weekStart:r.week_start||"", setor:r.setor||"", status:r.status||"backlog",
-      scheduledDate:r.scheduled_date||"", completedAt:r.completed_at||"",
+      scheduledDate:r.scheduled_date||"", completedAt:r.completed_at||"", responsibleEmployeeId:r.responsible_employee_id||"",
     };
   }
   const PCM_DAY_OFFSET = { seg:0, ter:1, qua:2, qui:3, sex:4, sab:5, dom:6 };
@@ -443,6 +446,7 @@
     attendance: [],
     myRequests: [],
     myServiceOrders: [], // OS do PCM atribuídas a ele (só leitura -- finalizar/reprogramar é sempre o gestor)
+    liderPeriodMode: "semana", // "semana" | "mes" -- só usado por quem é líder de equipe (liderOSHTML)
     checklistToday: null,
     checklistTodayRows: [], // um por categoria já enviada hoje (ver checklist_categories)
     checklistCategories: [],
@@ -738,6 +742,11 @@
     const e = state.employee;
     const unseenEscala = unseenRequestUpdatesCount(false);
     const unseenFerias = unseenRequestUpdatesCount(true);
+    // Pro líder de equipe o número que importa no ícone é "quantas OS estão atrasadas agora" (é o que
+    // a aba dele mostra); pra todo mundo continua sendo "quantas pendentes do meu setor", como sempre.
+    const osNavBadgeCount = e.lider_geral
+      ? state.myServiceOrders.filter(o=>o.status==="distribuida" && o.scheduledDate && o.scheduledDate<todayISO()).length
+      : state.myServiceOrders.filter(o=>o.status==="distribuida").length;
     return `
       <header class="top">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
@@ -754,12 +763,12 @@
           </div>
         </div>
       </header>
-      <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():state.tab==="os"?minhasOSHTML():state.tab==="relatorios"?photoReportHTML():state.tab==="bemestar"?bemEstarHTML():checklistHTML()}</main>
+      <main>${state.tab==="escala"?escalaHTML():state.tab==="ponto"?pontoHTML():state.tab==="ferias"?feriasHTML():state.tab==="os"?(state.employee.lider_geral?liderOSHTML():minhasOSHTML()):state.tab==="relatorios"?photoReportHTML():state.tab==="bemestar"?bemEstarHTML():checklistHTML()}</main>
       <nav class="bottom">
         <div class="n ${state.tab==='escala'?'active':''}" data-tab="escala"><span class="ic">${navIcon('calendar')}${unseenEscala>0?`<span class="nav-badge">${unseenEscala}</span>`:""}</span>Escala</div>
         <div class="n ${state.tab==='ponto'?'active':''}" data-tab="ponto"><span class="ic">${navIcon('clock')}</span>Ponto</div>
         <div class="n ${state.tab==='ferias'?'active':''}" data-tab="ferias"><span class="ic">${navIcon('sun')}${unseenFerias>0?`<span class="nav-badge">${unseenFerias}</span>`:""}</span>Férias</div>
-        <div class="n ${state.tab==='os'?'active':''}" data-tab="os"><span class="ic">${navIcon('wrench')}${state.myServiceOrders.filter(o=>o.status==="distribuida").length?`<span class="nav-badge">${state.myServiceOrders.filter(o=>o.status==="distribuida").length}</span>`:""}</span>OS</div>
+        <div class="n ${state.tab==='os'?'active':''}" data-tab="os"><span class="ic">${navIcon('wrench')}${osNavBadgeCount>0?`<span class="nav-badge">${osNavBadgeCount}</span>`:""}</span>OS</div>
         <div class="n ${state.tab==='checklist'?'active':''}" data-tab="checklist"><span class="ic">${navIcon('clipboardCheck')}</span>Checklist</div>
         <div class="n ${state.tab==='bemestar'?'active':''}" data-tab="bemestar"><span class="ic">${navIcon('heart')}</span>Bem‑estar</div>
         <div class="n" data-tab="logout"><span class="ic">${navIcon('logout')}</span>Sair</div>
@@ -1633,6 +1642,109 @@
     `;
   }
 
+  // ---------------- OS — consulta geral (só pra quem é "líder de equipe", employees.lider_geral) ----------------
+  // Mesma ideia do Painel de OS/PCM do painel/app do gestor (indicadores por período + em atraso), só
+  // que 100% leitura (sem Finalizar/Reprogramar/Distribuir) e sem seletor de data livre -- pedido
+  // explícito do usuário: "eu quero só que ele seja um usuário de consulta", "atrasadas de todo mundo",
+  // "indicadores da semana, indicadores do mês".
+  function liderStartOfWeek(iso){
+    const d = new Date(iso+"T00:00:00");
+    const dow = (d.getDay()+6)%7; // segunda=0 ... domingo=6
+    d.setDate(d.getDate()-dow);
+    return toISO(d);
+  }
+  function liderMonthRange(iso){
+    const [y,m] = iso.split("-").map(Number);
+    return { start: `${iso.slice(0,7)}-01`, end: `${iso.slice(0,7)}-${String(new Date(y,m,0).getDate()).padStart(2,"0")}` };
+  }
+  function liderResponsavelName(id){
+    if(!id) return "";
+    const e = state.allEmployeesPublic.find(x=>x.id===id);
+    return e ? e.name : "";
+  }
+  function liderDaysLate(scheduledDate, today){
+    const d1 = new Date(scheduledDate+"T00:00:00"), d2 = new Date(today+"T00:00:00");
+    return Math.max(1, Math.round((d2-d1)/86400000));
+  }
+  function liderOSHTML(){
+    const today = todayISO();
+    const all = state.myServiceOrders;
+    const active = all.filter(o=>o.status==="distribuida"||o.status==="realizada");
+    const emAtraso = active.filter(o=>o.status==="distribuida" && o.scheduledDate && o.scheduledDate<today)
+      .sort((a,b)=>(a.scheduledDate||"").localeCompare(b.scheduledDate||""));
+
+    const mode = state.liderPeriodMode==="mes" ? "mes" : "semana";
+    let periodStart, periodEnd, periodLabel;
+    if(mode==="mes"){
+      const r = liderMonthRange(today);
+      periodStart = r.start; periodEnd = r.end;
+      periodLabel = new Date(today+"T00:00:00").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+    } else {
+      periodStart = liderStartOfWeek(today);
+      periodEnd = addDays(periodStart, 6);
+      periodLabel = `${brDate(periodStart)} a ${brDate(periodEnd)}`;
+    }
+    const periodoOS = active.filter(o=>{
+      if(!o.scheduledDate || o.scheduledDate<periodStart || o.scheduledDate>periodEnd) return false;
+      // OS de hoje que ainda não foi marcada não conta como pendente -- o dia não acabou (mesma regra
+      // do Painel do gestor).
+      if(o.scheduledDate===today && o.status==="distribuida") return false;
+      return true;
+    });
+    const periodoPendentes = periodoOS.filter(o=>o.status==="distribuida");
+    const periodoRealizadas = periodoOS.filter(o=>o.status==="realizada");
+    const pct = periodoOS.length ? Math.round((periodoRealizadas.length/periodoOS.length)*100) : null;
+    const periodoWord = mode==="mes" ? "no mês" : "na semana";
+
+    const bySetor = new Map();
+    periodoOS.forEach(o => {
+      const key = o.setor || "Sem setor";
+      if(!bySetor.has(key)) bySetor.set(key, { setor:key, pendentes:0, realizadas:0 });
+      const row = bySetor.get(key);
+      if(o.status==="distribuida") row.pendentes++; else row.realizadas++;
+    });
+    const setorRows = [...bySetor.values()].sort((a,b)=>a.setor.localeCompare(b.setor,"pt-BR"));
+
+    return `
+      <h2 class="section" style="margin-bottom:2px">OS — consulta geral</h2>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px">Visão de todos os setores, só pra acompanhamento — você não edita, distribui nem finaliza OS por aqui.</p>
+      <div class="tabs2" style="margin-bottom:6px">
+        <div class="t ${mode==='semana'?'active':''}" data-lideros="semana">Semana</div>
+        <div class="t ${mode==='mes'?'active':''}" data-lideros="mes">Mês</div>
+      </div>
+      <p style="font-size:11.5px;color:var(--muted);margin:4px 0 14px;text-transform:capitalize">${esc(periodLabel)}</p>
+      <div class="kpis" style="margin-bottom:16px">
+        <div class="card kpi"><div class="label">Pendentes ${periodoWord}</div><div class="value">${periodoPendentes.length}</div></div>
+        <div class="card kpi"><div class="label">Realizadas ${periodoWord}</div><div class="value" style="color:var(--emerald)">${periodoRealizadas.length}</div></div>
+        <div class="card kpi"><div class="label">% concluído ${periodoWord}</div><div class="value">${pct==null?"—":pct+"%"}</div></div>
+        <div class="card kpi"><div class="label">Em atraso (hoje)</div><div class="value" style="color:${emAtraso.length?'var(--rose)':'var(--emerald)'}">${emAtraso.length}</div></div>
+      </div>
+      <h2 class="section">Por setor (${periodoWord})</h2>
+      <div class="card" style="padding:0;margin-bottom:16px">
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Setor</th><th>Pendentes</th><th>Realizadas</th></tr></thead>
+          <tbody>${setorRows.map(r=>`<tr${r.pendentes>0?' style="font-weight:700"':''}><td>${esc(r.setor)}</td><td style="color:${r.pendentes>0?'var(--rose)':'var(--brand-light)'}">${r.pendentes}</td><td style="color:var(--emerald)">${r.realizadas}</td></tr>`).join("") || `<tr><td colspan="3" class="empty">Nada agendado nesse período.</td></tr>`}</tbody>
+        </table>
+        </div>
+      </div>
+      <h2 class="section">OS atrasadas agora — todos os setores (${emAtraso.length})</h2>
+      ${!emAtraso.length ? `<div class="card"><p style="margin:0;font-size:13px;color:var(--muted)">Nenhuma OS atrasada no momento. 🎉</p></div>` : `
+      <div class="card" style="padding:4px 16px">
+        ${emAtraso.map(o => {
+          const dias = liderDaysLate(o.scheduledDate, today);
+          const resp = liderResponsavelName(o.responsibleEmployeeId);
+          return `
+          <div class="req-row" style="cursor:default">
+            <div class="d">OS ${o.osNumber} — ${esc(o.description)||"—"}</div>
+            <div class="sub">${esc(o.setor)||"—"}${o.tag?` · ${esc(o.tag)}`:""}${resp?` · Resp.: ${esc(resp)}`:""}</div>
+            <span class="badge rejeitado" style="margin-top:6px;display:inline-block">⚠️ ${dias} dia${dias===1?"":"s"} atrasada</span>
+          </div>`;
+        }).join("")}
+      </div>`}
+    `;
+  }
+
   // ---------------- Bem-estar (quiz mensal de clima psicológico + satisfação) ----------------
   function currentPeriodStartISO(){
     const d = new Date();
@@ -1838,7 +1950,12 @@
     // colaborador do setor recebe). Fora do Promise.all de propósito: tabela nova, se o schema ainda
     // não tiver sido atualizado no Supabase isso não pode derrubar o carregamento do resto do app.
     try{
-      const { data: myOS, error: myOSErr } = state.employee.setor
+      // Líder de equipe (employees.lider_geral) enxerga a tabela inteira (RLS libera via
+      // my_is_lider_geral()) -- é a consulta de atrasadas/indicadores de TODOS os setores, não só do
+      // dele. Quem não é líder continua vendo só o próprio setor, como sempre.
+      const { data: myOS, error: myOSErr } = state.employee.lider_geral
+        ? await supabase.from("service_orders").select("*")
+        : state.employee.setor
         ? await supabase.from("service_orders").select("*").eq("setor", state.employee.setor)
         : { data: [], error: null };
       if(myOSErr) throw myOSErr;
@@ -1883,7 +2000,9 @@
     // calendário/apontamentos) resolve pelo histórico, não por state.shift.
     state.shiftHistory = (shiftHistory || []).map(r => ({ shiftId: r.shift_id, effectiveFrom: r.effective_from }));
     try{
-      const { data: myOS, error: myOSErr } = state.employee.setor
+      const { data: myOS, error: myOSErr } = state.employee.lider_geral
+        ? await supabase.from("service_orders").select("*")
+        : state.employee.setor
         ? await supabase.from("service_orders").select("*").eq("setor", state.employee.setor)
         : { data: [], error: null };
       if(myOSErr) throw myOSErr;
@@ -2733,10 +2852,16 @@
       localStorage.setItem("lastSeenFerias_"+state.employee.id, new Date().toISOString());
     }
     if(state.tab==="os"){
-      document.querySelectorAll("[data-marcarosfeita]").forEach(el => el.addEventListener("click", () => {
-        const os = state.myServiceOrders.find(o=>o.id===el.dataset.marcarosfeita);
-        if(os) markServiceOrderDone(os);
-      }));
+      if(state.employee.lider_geral){
+        document.querySelectorAll("[data-lideros]").forEach(el => el.addEventListener("click", () => {
+          state.liderPeriodMode = el.dataset.lideros; render();
+        }));
+      } else {
+        document.querySelectorAll("[data-marcarosfeita]").forEach(el => el.addEventListener("click", () => {
+          const os = state.myServiceOrders.find(o=>o.id===el.dataset.marcarosfeita);
+          if(os) markServiceOrderDone(os);
+        }));
+      }
     }
     if(state.tab==="relatorios"){
       wirePhotoReport();
@@ -2876,6 +3001,12 @@
     const activeTag = document.activeElement && document.activeElement.tagName;
     if(activeTag==="INPUT" || activeTag==="TEXTAREA" || activeTag==="SELECT") return;
     if($("#modalRoot") && $("#modalRoot").innerHTML.trim()) return;
+    // Nunca redesenhar a tela enquanto o relatório fotográfico está aberto -- um re-render aqui troca
+    // o <input type="file"> de baixo da seletor de fotos nativo do celular, que pode ficar aberto por
+    // mais de 30s (escolhendo/tirando várias fotos). Quando isso acontece, o celular descarta as fotos
+    // selecionadas sem avisar nada (bug real reportado: "adiciono as fotos, clico em concluir, a tela
+    // só fecha e não adiciona nada"). Essa tela edita só rascunho local, não precisa de dado ao vivo.
+    if(state.tab==="relatorios" && state.prTab==="editor") return;
     await loadLiveUpdates();
     await autoFinalizeStaleGeneralRequests();
     render();
