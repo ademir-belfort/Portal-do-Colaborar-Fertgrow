@@ -5,7 +5,7 @@
 //
 // Pra publicar uma atualização no futuro: suba os arquivos de novo com CACHE_NAME incrementado
 // (ex: "fertgrow-portal-v2") — isso invalida o cache antigo automaticamente pros usuários.
-const CACHE_NAME = "fertgrow-portal-v4";
+const CACHE_NAME = "fertgrow-portal-v6";
 const SHELL_FILES = ["./portal_colaborador.html", "./manifest.json"];
 
 self.addEventListener("install", (event) => {

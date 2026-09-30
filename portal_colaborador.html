@@ -447,6 +447,8 @@
     myRequests: [],
     myServiceOrders: [], // OS do PCM atribuídas a ele (só leitura -- finalizar/reprogramar é sempre o gestor)
     liderPeriodMode: "semana", // "semana" | "mes" -- só usado por quem é líder de equipe (liderOSHTML)
+    liderFiltroSetor: "", // "" = todos -- filtro da lista de OS do líder
+    liderFiltroStatus: "atrasadas", // "atrasadas" | "pendentes" | "concluidas" | "todas"
     checklistToday: null,
     checklistTodayRows: [], // um por categoria já enviada hoje (ver checklist_categories)
     checklistCategories: [],
@@ -1708,6 +1710,7 @@
     return `
       <h2 class="section" style="margin-bottom:2px">OS — consulta geral</h2>
       <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px">Visão de todos os setores, só pra acompanhamento — você não edita, distribui nem finaliza OS por aqui.</p>
+      <button class="btn ghost small" data-tab="relatorios" style="width:auto;margin-bottom:14px">📷 Relatório Fotográfico</button>
       <div class="tabs2" style="margin-bottom:6px">
         <div class="t ${mode==='semana'?'active':''}" data-lideros="semana">Semana</div>
         <div class="t ${mode==='mes'?'active':''}" data-lideros="mes">Mês</div>
@@ -1728,21 +1731,67 @@
         </table>
         </div>
       </div>
-      <h2 class="section">OS atrasadas agora — todos os setores (${emAtraso.length})</h2>
-      ${!emAtraso.length ? `<div class="card"><p style="margin:0;font-size:13px;color:var(--muted)">Nenhuma OS atrasada no momento. 🎉</p></div>` : `
+      <h2 class="section" style="margin-bottom:8px">Lista de OS</h2>
+      ${liderListFiltersHTML(all)}
+      ${liderListHTML(all, today)}
+    `;
+  }
+  // Filtro de setor (lista todos os setores que aparecem nas OS que ele enxerga) + status
+  // (atrasadas/pendentes/realizadas/todas) -- pedido explícito do usuário depois de ver a primeira
+  // versão: "essas OS precisam de filtro, ordena por data, setor, atrasadas, concluidas".
+  function liderSetorOptions(all){
+    return [...new Set(all.map(o=>o.setor||"Sem setor"))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  }
+  function liderListFiltersHTML(all){
+    const setorOptions = liderSetorOptions(all);
+    const setorAtual = state.liderFiltroSetor || "";
+    const statusAtual = state.liderFiltroStatus || "atrasadas";
+    return `
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <select class="input" id="liderFiltroSetor" style="flex:1">
+          <option value="">Todos os setores</option>
+          ${setorOptions.map(s=>`<option value="${esc(s)}" ${s===setorAtual?'selected':''}>${esc(s)}</option>`).join("")}
+        </select>
+        <select class="input" id="liderFiltroStatus" style="flex:1">
+          <option value="atrasadas" ${statusAtual==='atrasadas'?'selected':''}>Atrasadas</option>
+          <option value="pendentes" ${statusAtual==='pendentes'?'selected':''}>Pendentes (todas)</option>
+          <option value="concluidas" ${statusAtual==='concluidas'?'selected':''}>Concluídas</option>
+          <option value="todas" ${statusAtual==='todas'?'selected':''}>Todas</option>
+        </select>
+      </div>
+    `;
+  }
+  function liderFilteredList(all, today){
+    let list = all.filter(o=>o.status==="distribuida"||o.status==="realizada");
+    const setorFiltro = state.liderFiltroSetor || "";
+    if(setorFiltro) list = list.filter(o=>(o.setor||"Sem setor")===setorFiltro);
+    const statusFiltro = state.liderFiltroStatus || "atrasadas";
+    if(statusFiltro==="atrasadas") list = list.filter(o=>o.status==="distribuida" && o.scheduledDate && o.scheduledDate<today);
+    else if(statusFiltro==="pendentes") list = list.filter(o=>o.status==="distribuida");
+    else if(statusFiltro==="concluidas") list = list.filter(o=>o.status==="realizada");
+    // "todas" não filtra mais nada.
+    return [...list].sort((a,b)=>(a.scheduledDate||"9999").localeCompare(b.scheduledDate||"9999"));
+  }
+  function liderListHTML(all, today){
+    const list = liderFilteredList(all, today);
+    if(!list.length) return `<div class="card"><p style="margin:0;font-size:13px;color:var(--muted)">Nenhuma OS encontrada com esse filtro.</p></div>`;
+    return `
       <div class="card" style="padding:4px 16px">
-        ${emAtraso.map(o => {
-          const dias = liderDaysLate(o.scheduledDate, today);
+        ${list.map(o => {
           const resp = liderResponsavelName(o.responsibleEmployeeId);
+          const atrasada = o.status==="distribuida" && o.scheduledDate && o.scheduledDate<today;
+          let statusBadge;
+          if(o.status==="realizada") statusBadge = `<span class="badge aprovado" style="margin-top:6px;display:inline-block">✅ Realizada${o.completedAt?` em ${brDate(o.completedAt.slice(0,10))}`:""}</span>`;
+          else if(atrasada) statusBadge = `<span class="badge rejeitado" style="margin-top:6px;display:inline-block">⚠️ ${liderDaysLate(o.scheduledDate, today)} dia${liderDaysLate(o.scheduledDate, today)===1?"":"s"} atrasada</span>`;
+          else statusBadge = `<span class="badge pendente" style="margin-top:6px;display:inline-block">${o.scheduledDate?brDate(o.scheduledDate):"Sem data definida"}</span>`;
           return `
           <div class="req-row" style="cursor:default">
             <div class="d">OS ${o.osNumber} — ${esc(o.description)||"—"}</div>
-            <div class="sub">${esc(o.setor)||"—"}${o.tag?` · ${esc(o.tag)}`:""}${resp?` · Resp.: ${esc(resp)}`:""}</div>
-            <span class="badge rejeitado" style="margin-top:6px;display:inline-block">⚠️ ${dias} dia${dias===1?"":"s"} atrasada</span>
+            <div class="sub">${esc(o.setor)||"Sem setor"}${o.tag?` · ${esc(o.tag)}`:""}${resp?` · Resp.: ${esc(resp)}`:""}</div>
+            ${statusBadge}
           </div>`;
         }).join("")}
-      </div>`}
-    `;
+      </div>`;
   }
 
   // ---------------- Bem-estar (quiz mensal de clima psicológico + satisfação) ----------------
@@ -2856,6 +2905,10 @@
         document.querySelectorAll("[data-lideros]").forEach(el => el.addEventListener("click", () => {
           state.liderPeriodMode = el.dataset.lideros; render();
         }));
+        const filtroSetor = $("#liderFiltroSetor");
+        if(filtroSetor) filtroSetor.addEventListener("change", () => { state.liderFiltroSetor = filtroSetor.value; render(); });
+        const filtroStatus = $("#liderFiltroStatus");
+        if(filtroStatus) filtroStatus.addEventListener("change", () => { state.liderFiltroStatus = filtroStatus.value; render(); });
       } else {
         document.querySelectorAll("[data-marcarosfeita]").forEach(el => el.addEventListener("click", () => {
           const os = state.myServiceOrders.find(o=>o.id===el.dataset.marcarosfeita);
